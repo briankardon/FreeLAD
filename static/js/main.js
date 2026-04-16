@@ -746,11 +746,9 @@ function deselectModel() {
 function groundSelectedModel() {
     const mesh = stlMeshes.get(selectedModel);
     if (!mesh) return;
-    mesh.geometry.computeBoundingBox();
-    const bb = mesh.geometry.boundingBox.clone();
-    bb.min.multiply(mesh.scale);
-    bb.max.multiply(mesh.scale);
-    mesh.position.y = -bb.min.y;
+    // Compute world-space bounding box, then shift so its bottom is at Y=0
+    const box = new THREE.Box3().setFromObject(mesh);
+    mesh.position.y -= box.min.y;
     broadcastSTLTransform(selectedModel);
 }
 
