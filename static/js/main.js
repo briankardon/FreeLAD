@@ -139,14 +139,24 @@ function init() {
         document.getElementById("hud").classList.remove("active");
     });
 
+    // Restore saved name/color from localStorage
+    const savedName = localStorage.getItem("freelad_name");
+    const savedColor = localStorage.getItem("freelad_color");
+    if (savedName) document.getElementById("player-name").value = savedName;
+    if (savedColor) document.getElementById("player-color").value = savedColor;
+
     // Blocker click to enter world
     document.getElementById("blocker").addEventListener("click", (e) => {
         if (e.target.id === "player-name" || e.target.id === "player-color" || e.target.id === "upload-btn" || e.target.tagName === "INPUT") return;
         if (socket) {
             const name = document.getElementById("player-name").value.trim();
             const color = document.getElementById("player-color").value;
-            if (name) socket.emit("set_name", { name });
+            if (name) {
+                socket.emit("set_name", { name });
+                localStorage.setItem("freelad_name", name);
+            }
             socket.emit("set_color", { color });
+            localStorage.setItem("freelad_color", color);
         }
         controls.lock();
     });
@@ -719,8 +729,15 @@ function initNetwork() {
     socket.on("welcome", (data) => {
         myId = data.you.id;
         console.log("Connected as", data.you.name, "color:", data.you.color);
-        // Sync the color picker to the server-assigned color
-        document.getElementById("player-color").value = data.you.color;
+
+        // Apply saved name/color immediately on connect
+        const savedName = localStorage.getItem("freelad_name");
+        const savedColor = localStorage.getItem("freelad_color");
+        if (savedName) socket.emit("set_name", { name: savedName });
+        if (savedColor) socket.emit("set_color", { color: savedColor });
+
+        // Sync the color picker to saved or server-assigned color
+        document.getElementById("player-color").value = savedColor || data.you.color;
 
         for (const [sid, player] of Object.entries(data.players)) {
             addRemotePlayer(player);
