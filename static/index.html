@@ -29,6 +29,35 @@
                 <input type="file" id="stl-upload" accept=".stl" style="display:none">
                 <label class="scale-label">Scale: <input type="number" id="import-scale" value="1" step="any" min="0.0001" autocomplete="off"></label>
             </div>
+            <!-- Admin login -->
+            <div id="admin-login" class="admin-login">
+                <input type="password" id="admin-password" placeholder="Admin password" autocomplete="off">
+                <button id="admin-login-btn">Login</button>
+            </div>
+
+            <!-- Admin panel (hidden until authenticated) -->
+            <div id="admin-panel" class="admin-panel hidden">
+                <h3>Admin Controls</h3>
+                <div class="admin-row">
+                    <label><input type="checkbox" id="admin-editing-toggle" checked> Allow editing</label>
+                    <label><input type="checkbox" id="admin-upload-toggle" checked> Allow uploads</label>
+                    <label>Max size: <input type="number" id="admin-max-bbox" value="0" min="0" step="any" title="0 = unlimited"></label>
+                </div>
+                <div class="admin-row">
+                    <button id="admin-teleport-btn">Teleport all here</button>
+                </div>
+                <div class="admin-lists">
+                    <div class="admin-list-col">
+                        <h4>Models</h4>
+                        <ul id="admin-model-list"></ul>
+                    </div>
+                    <div class="admin-list-col">
+                        <h4>Players</h4>
+                        <ul id="admin-player-list"></ul>
+                    </div>
+                </div>
+            </div>
+
             <p>Click to enter the world</p>
             <div class="controls-help">
                 <div class="col">

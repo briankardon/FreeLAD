@@ -46,6 +46,10 @@ const stlLoader = new STLLoader();
 let selectedModel = null;
 let transformMode = null; // null, "translate", "rotate", "scale"
 
+// Admin state
+let isAdmin = false;
+let editingEnabled = true;
+
 // Multiplayer state
 let socket;
 let myId = null;
@@ -156,6 +160,9 @@ function init() {
     // STL upload
     document.getElementById("stl-upload").addEventListener("change", onSTLUpload);
 
+    // Admin UI
+    initAdminUI();
+
     // Network
     initNetwork();
 
@@ -200,21 +207,24 @@ function onKeyDown(e) {
             updateModeIndicators();
             break;
 
-        // --- Object transform mode selection (toggle on/off) ---
+        // --- Object transform mode selection (toggle on/off, respects editing lock) ---
         case "KeyG":
+            if (!canEdit()) break;
             setTransformMode(transformMode === "translate" ? null : "translate");
             break;
         case "KeyR":
+            if (!canEdit()) break;
             setTransformMode(transformMode === "rotate" ? null : "rotate");
             break;
         case "KeyT":
+            if (!canEdit()) break;
             setTransformMode(transformMode === "scale" ? null : "scale");
             break;
 
         // --- Object manipulation with arrow keys ---
         case "ArrowUp": case "ArrowDown": case "ArrowLeft": case "ArrowRight":
         case "PageUp": case "PageDown":
-            if (selectedModel && transformMode) {
+            if (selectedModel && transformMode && canEdit()) {
                 e.preventDefault();
                 transformSelectedModel(e.code, e.shiftKey);
             }
@@ -222,6 +232,7 @@ function onKeyDown(e) {
 
         // --- Delete selected model ---
         case "Delete":
+            if (!canEdit()) break;
             deleteSelectedModel();
             break;
     }
@@ -324,18 +335,104 @@ function transformSelectedModel(keyCode, fine) {
     broadcastSTLTransform(selectedModel);
 }
 
+function canEdit() {
+    return isAdmin || editingEnabled;
+}
+
+function updateUploadVisibility(enabled) {
+    const uploadArea = document.querySelector(".upload-area-menu");
+    if (uploadArea) {
+        uploadArea.style.display = (isAdmin || enabled) ? "" : "none";
+    }
+}
+
 function updateModeIndicators() {
     document.getElementById("fly-indicator").className = flyMode ? "mode-on" : "mode-off";
     document.getElementById("clip-indicator").className = clipMode ? "mode-on" : "mode-off";
 
     // Transform mode indicator
     const el = document.getElementById("transform-indicator");
-    if (selectedModel && transformMode) {
+    if (!canEdit()) {
+        el.textContent = "LOCKED";
+        el.className = "mode-off";
+    } else if (selectedModel && transformMode) {
         el.textContent = transformMode.toUpperCase();
         el.className = "mode-on";
     } else {
         el.textContent = "---";
         el.className = "mode-off";
+    }
+}
+
+// ============================================================
+// Admin UI
+// ============================================================
+function initAdminUI() {
+    document.getElementById("admin-login-btn").addEventListener("click", () => {
+        const pw = document.getElementById("admin-password").value;
+        if (pw && socket) socket.emit("admin_login", { password: pw });
+    });
+    document.getElementById("admin-password").addEventListener("keydown", (e) => {
+        if (e.code === "Enter") document.getElementById("admin-login-btn").click();
+    });
+
+    document.getElementById("admin-editing-toggle").addEventListener("change", (e) => {
+        socket.emit("admin_toggle_editing", { enabled: e.target.checked });
+    });
+
+    document.getElementById("admin-upload-toggle").addEventListener("change", (e) => {
+        socket.emit("admin_toggle_upload", { enabled: e.target.checked });
+    });
+
+    document.getElementById("admin-max-bbox").addEventListener("change", (e) => {
+        socket.emit("admin_set_max_bbox", { value: parseFloat(e.target.value) || 0 });
+    });
+
+    document.getElementById("admin-teleport-btn").addEventListener("click", () => {
+        socket.emit("admin_teleport_all", { position: camera.position.toArray() });
+    });
+
+    // Prevent blocker click-through on admin panel inputs
+    document.getElementById("admin-panel").addEventListener("click", (e) => e.stopPropagation());
+    document.getElementById("admin-login").addEventListener("click", (e) => e.stopPropagation());
+}
+
+function updateAdminPanel(data) {
+    // Update settings
+    document.getElementById("admin-editing-toggle").checked = data.settings.editing_enabled;
+    document.getElementById("admin-upload-toggle").checked = data.settings.upload_enabled;
+    document.getElementById("admin-max-bbox").value = data.settings.max_bbox;
+
+    // Update model list
+    const modelList = document.getElementById("admin-model-list");
+    modelList.innerHTML = "";
+    for (const model of data.models) {
+        const li = document.createElement("li");
+        const nameSpan = document.createElement("span");
+        nameSpan.textContent = model.name;
+        nameSpan.title = model.name;
+        nameSpan.style.overflow = "hidden";
+        nameSpan.style.textOverflow = "ellipsis";
+        nameSpan.style.whiteSpace = "nowrap";
+        nameSpan.style.maxWidth = "150px";
+        const delBtn = document.createElement("button");
+        delBtn.textContent = "Del";
+        delBtn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            socket.emit("admin_delete_model", { id: model.id });
+        });
+        li.appendChild(nameSpan);
+        li.appendChild(delBtn);
+        modelList.appendChild(li);
+    }
+
+    // Update player list
+    const playerList = document.getElementById("admin-player-list");
+    playerList.innerHTML = "";
+    for (const player of data.players) {
+        const li = document.createElement("li");
+        li.textContent = player.name;
+        playerList.appendChild(li);
     }
 }
 
@@ -491,6 +588,40 @@ function loadSTLModel(modelInfo) {
         mesh.rotation.set(...modelInfo.rotation);
         mesh.scale.fromArray(modelInfo.scale);
 
+        // Auto-lift: shift up so the bounding box bottom sits at ground level
+        if (modelInfo.autoLift) {
+            geometry.computeBoundingBox();
+            const bb = geometry.boundingBox.clone();
+            bb.min.multiply(mesh.scale);
+            bb.max.multiply(mesh.scale);
+
+            // Enforce max bounding box size if set
+            const maxBbox = modelInfo.maxBbox || 0;
+            if (maxBbox > 0) {
+                const size = new THREE.Vector3();
+                bb.getSize(size);
+                const maxDim = Math.max(size.x, size.y, size.z);
+                if (maxDim > maxBbox) {
+                    const clampFactor = maxBbox / maxDim;
+                    mesh.scale.multiplyScalar(clampFactor);
+                    bb.min.multiplyScalar(clampFactor);
+                    bb.max.multiplyScalar(clampFactor);
+                }
+            }
+
+            if (bb.min.y < 0) {
+                mesh.position.y -= bb.min.y;
+            }
+            // Place the uploading player on top of the model
+            if (modelInfo.uploader === myId) {
+                camera.position.y = mesh.position.y + bb.max.y + EYE_HEIGHT;
+                velocity.y = 0;
+                onGround = false;
+            }
+            // Broadcast the corrected position/scale back to the server
+            broadcastSTLTransform(modelInfo.id);
+        }
+
         scene.add(mesh);
         stlMeshes.set(modelInfo.id, mesh);
         collidables.push(mesh);
@@ -555,9 +686,15 @@ async function onSTLUpload(e) {
     if (!file) return;
 
     const scale = parseFloat(document.getElementById("import-scale").value) || 1;
+    // Place the model at the player's feet position
+    const pos = camera.position.clone();
+    pos.y -= EYE_HEIGHT; // feet level, not eye level
+
     const formData = new FormData();
     formData.append("file", file);
     formData.append("scale", scale);
+    formData.append("position", JSON.stringify([pos.x, pos.y, pos.z]));
+    formData.append("uploader", myId);
 
     try {
         const resp = await fetch("/upload_stl", { method: "POST", body: formData });
@@ -588,6 +725,9 @@ function initNetwork() {
         for (const model of data.stl_models) {
             loadSTLModel(model);
         }
+        editingEnabled = data.editing_enabled;
+        updateUploadVisibility(data.upload_enabled);
+        updateModeIndicators();
         updatePlayerCount();
     });
 
@@ -637,6 +777,42 @@ function initNetwork() {
             mesh.geometry.dispose();
             mesh.material.dispose();
         }
+    });
+
+    // --- Admin events ---
+    socket.on("admin_login_result", (data) => {
+        if (data.success) {
+            isAdmin = true;
+            document.getElementById("admin-login").style.display = "none";
+            document.getElementById("admin-panel").classList.remove("hidden");
+        } else {
+            document.getElementById("admin-password").style.borderColor = "#e74c3c";
+            setTimeout(() => {
+                document.getElementById("admin-password").style.borderColor = "#666";
+            }, 1500);
+        }
+    });
+
+    socket.on("admin_state", (data) => {
+        updateAdminPanel(data);
+    });
+
+    socket.on("editing_enabled_changed", (data) => {
+        editingEnabled = data.enabled;
+        if (!canEdit()) {
+            deselectModel();
+            transformMode = null;
+        }
+        updateModeIndicators();
+    });
+
+    socket.on("upload_enabled_changed", (data) => {
+        updateUploadVisibility(data.enabled);
+    });
+
+    socket.on("teleport", (data) => {
+        camera.position.fromArray(data.position);
+        velocity.set(0, 0, 0);
     });
 }
 

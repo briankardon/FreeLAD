@@ -122,6 +122,156 @@ canvas {
     outline: none;
 }
 
+/* Admin panel */
+.admin-login {
+    margin-bottom: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+}
+
+#admin-password {
+    padding: 6px 12px;
+    font-size: 13px;
+    border: 1px solid #666;
+    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.08);
+    color: #fff;
+    width: 140px;
+    outline: none;
+}
+
+#admin-login-btn {
+    padding: 6px 14px;
+    font-size: 13px;
+    border: 1px solid #666;
+    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.1);
+    color: #aaa;
+    cursor: pointer;
+}
+
+#admin-login-btn:hover {
+    background: rgba(255, 255, 255, 0.2);
+    color: #fff;
+}
+
+.admin-panel {
+    background: rgba(255, 140, 0, 0.1);
+    border: 1px solid rgba(255, 140, 0, 0.4);
+    border-radius: 8px;
+    padding: 14px 20px;
+    margin-bottom: 14px;
+    text-align: left;
+    max-width: 500px;
+    margin-left: auto;
+    margin-right: auto;
+}
+
+.admin-panel.hidden {
+    display: none;
+}
+
+.admin-panel h3 {
+    text-align: center;
+    color: #ffa726;
+    margin-bottom: 10px;
+    font-size: 14px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+.admin-row {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    margin-bottom: 10px;
+    font-size: 13px;
+    color: #ccc;
+}
+
+.admin-row label {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.admin-row input[type="number"] {
+    width: 60px;
+    padding: 3px 6px;
+    font-size: 13px;
+    border: 1px solid #666;
+    border-radius: 3px;
+    background: rgba(255, 255, 255, 0.1);
+    color: #fff;
+    text-align: center;
+    outline: none;
+}
+
+#admin-teleport-btn {
+    padding: 5px 14px;
+    font-size: 13px;
+    border: 1px solid #ffa726;
+    border-radius: 4px;
+    background: rgba(255, 167, 38, 0.2);
+    color: #ffa726;
+    cursor: pointer;
+}
+
+#admin-teleport-btn:hover {
+    background: rgba(255, 167, 38, 0.4);
+}
+
+.admin-lists {
+    display: flex;
+    gap: 16px;
+}
+
+.admin-list-col {
+    flex: 1;
+}
+
+.admin-list-col h4 {
+    color: #ffa726;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-bottom: 4px;
+}
+
+.admin-list-col ul {
+    list-style: none;
+    max-height: 120px;
+    overflow-y: auto;
+    font-size: 12px;
+    color: #ccc;
+}
+
+.admin-list-col li {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 2px 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.admin-list-col li button {
+    padding: 1px 8px;
+    font-size: 11px;
+    border: 1px solid #e74c3c;
+    border-radius: 3px;
+    background: rgba(231, 76, 60, 0.2);
+    color: #e74c3c;
+    cursor: pointer;
+    margin-left: 8px;
+}
+
+.admin-list-col li button:hover {
+    background: rgba(231, 76, 60, 0.5);
+}
+
 .controls-help {
     display: flex;
     gap: 40px;
