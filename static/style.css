@@ -122,6 +122,25 @@ canvas {
     outline: none;
 }
 
+.import-color {
+    width: 36px;
+    height: 36px;
+    border: 2px solid #4fc3f7;
+    border-radius: 4px;
+    background: none;
+    cursor: pointer;
+    padding: 2px;
+}
+
+.import-color::-webkit-color-swatch-wrapper {
+    padding: 0;
+}
+
+.import-color::-webkit-color-swatch {
+    border: none;
+    border-radius: 2px;
+}
+
 /* Admin panel */
 .admin-login {
     margin-bottom: 12px;

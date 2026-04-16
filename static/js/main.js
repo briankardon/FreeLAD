@@ -415,6 +415,8 @@ function updateAdminPanel(data) {
         nameSpan.style.textOverflow = "ellipsis";
         nameSpan.style.whiteSpace = "nowrap";
         nameSpan.style.maxWidth = "150px";
+        nameSpan.style.direction = "rtl";
+        nameSpan.style.textAlign = "left";
         const delBtn = document.createElement("button");
         delBtn.textContent = "Del";
         delBtn.addEventListener("click", (e) => {
@@ -574,7 +576,7 @@ function loadSTLModel(modelInfo) {
         geometry.computeVertexNormals();
 
         const material = new THREE.MeshStandardMaterial({
-            color: 0xaaaacc,
+            color: modelInfo.color || "#aaaacc",
             roughness: 0.5,
             metalness: 0.3,
         });
@@ -695,6 +697,7 @@ async function onSTLUpload(e) {
     formData.append("scale", scale);
     formData.append("position", JSON.stringify([pos.x, pos.y, pos.z]));
     formData.append("uploader", myId);
+    formData.append("color", document.getElementById("import-color").value);
 
     try {
         const resp = await fetch("/upload_stl", { method: "POST", body: formData });

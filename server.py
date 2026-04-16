@@ -41,6 +41,7 @@ def load_existing_stls():
                 "position": [0, 0, 0],
                 "rotation": [0, 0, 0],
                 "scale": [1, 1, 1],
+                "color": "#aaaacc",
             }
 
 load_existing_stls()
@@ -126,6 +127,8 @@ def upload_stl():
     except (TypeError, ValueError, json.JSONDecodeError):
         position = [0, 0, 0]
 
+    color = request.form.get("color", "#aaaacc")
+
     model_id = str(uuid.uuid4())
     stl_models[model_id] = {
         "id": model_id,
@@ -134,6 +137,7 @@ def upload_stl():
         "position": position,
         "rotation": [0, 0, 0],
         "scale": [scale, scale, scale],
+        "color": color,
     }
 
     # Broadcast new model to all clients (autoLift tells clients to adjust Y)
