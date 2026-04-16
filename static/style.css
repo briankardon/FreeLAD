@@ -1,0 +1,251 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    overflow: hidden;
+    background: #000;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    color: #fff;
+}
+
+canvas {
+    display: block;
+}
+
+/* Blocker / Instructions overlay */
+#blocker {
+    position: fixed;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    background: rgba(0, 0, 0, 0.85);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+    cursor: pointer;
+}
+
+#blocker.hidden {
+    display: none;
+}
+
+#instructions {
+    text-align: center;
+    max-width: 700px;
+}
+
+#instructions h1 {
+    font-size: 48px;
+    margin-bottom: 12px;
+    letter-spacing: 4px;
+    color: #4fc3f7;
+}
+
+#instructions > p {
+    font-size: 20px;
+    margin-bottom: 28px;
+    color: #aaa;
+}
+
+.name-input {
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+}
+
+#player-color {
+    width: 42px;
+    height: 42px;
+    border: 2px solid #4fc3f7;
+    border-radius: 6px;
+    background: none;
+    cursor: pointer;
+    padding: 2px;
+}
+
+#player-color::-webkit-color-swatch-wrapper {
+    padding: 0;
+}
+
+#player-color::-webkit-color-swatch {
+    border: none;
+    border-radius: 3px;
+}
+
+#player-name {
+    padding: 8px 16px;
+    font-size: 18px;
+    border: 2px solid #4fc3f7;
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.1);
+    color: #fff;
+    text-align: center;
+    outline: none;
+    width: 240px;
+}
+
+#player-name::placeholder {
+    color: rgba(255, 255, 255, 0.4);
+}
+
+#player-name:focus {
+    background: rgba(255, 255, 255, 0.15);
+    border-color: #81d4fa;
+}
+
+.upload-area-menu {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+}
+
+.scale-label {
+    font-size: 13px;
+    color: #aaa;
+}
+
+#import-scale {
+    width: 70px;
+    padding: 6px 8px;
+    font-size: 14px;
+    border: 2px solid #4fc3f7;
+    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.1);
+    color: #fff;
+    text-align: center;
+    outline: none;
+}
+
+.controls-help {
+    display: flex;
+    gap: 40px;
+    justify-content: center;
+    text-align: left;
+}
+
+.controls-help .col {
+    min-width: 150px;
+}
+
+.controls-help h3 {
+    color: #4fc3f7;
+    margin-bottom: 8px;
+    font-size: 14px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+.controls-help p {
+    font-size: 13px;
+    margin-bottom: 4px;
+    color: #ccc;
+}
+
+kbd {
+    display: inline-block;
+    padding: 2px 6px;
+    margin-right: 4px;
+    background: #333;
+    border: 1px solid #555;
+    border-radius: 3px;
+    font-size: 11px;
+    font-family: monospace;
+    color: #fff;
+    min-width: 20px;
+    text-align: center;
+}
+
+/* HUD */
+#hud {
+    position: fixed;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    pointer-events: none;
+    z-index: 50;
+    display: none;
+}
+
+#hud.active {
+    display: block;
+}
+
+#crosshair {
+    position: absolute;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 24px;
+    color: rgba(255, 255, 255, 0.6);
+    font-weight: 300;
+    user-select: none;
+}
+
+#mode-indicators {
+    position: absolute;
+    top: 12px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    gap: 12px;
+}
+
+#mode-indicators span {
+    padding: 4px 12px;
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: bold;
+    letter-spacing: 1px;
+    transition: all 0.2s;
+}
+
+.mode-on {
+    background: rgba(76, 175, 80, 0.8) !important;
+    color: #fff !important;
+}
+
+.mode-off {
+    background: rgba(255, 255, 255, 0.1);
+    color: rgba(255, 255, 255, 0.3);
+}
+
+#player-count {
+    position: absolute;
+    top: 12px;
+    right: 16px;
+    font-size: 13px;
+    color: rgba(255, 255, 255, 0.6);
+}
+
+.upload-area-menu {
+    margin-bottom: 12px;
+}
+
+#upload-btn {
+    display: inline-block;
+    padding: 8px 20px;
+    background: rgba(79, 195, 247, 0.8);
+    color: #fff;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: bold;
+    transition: background 0.2s;
+}
+
+#upload-btn:hover {
+    background: rgba(79, 195, 247, 1);
+}
+
+#position-display {
+    position: absolute;
+    bottom: 16px;
+    left: 16px;
+    font-size: 12px;
+    color: rgba(255, 255, 255, 0.4);
+    font-family: monospace;
+}

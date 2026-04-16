@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FreeLAD - 3D Virtual World</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://unpkg.com/three@0.170.0/build/three.module.js",
+            "three/addons/": "https://unpkg.com/three@0.170.0/examples/jsm/"
+        }
+    }
+    </script>
+</head>
+<body>
+    <!-- Blocker overlay shown before pointer lock -->
+    <div id="blocker">
+        <div id="instructions">
+            <h1>FreeLAD</h1>
+            <div class="name-input">
+                <input type="text" id="player-name" placeholder="Enter your name" maxlength="20" autocomplete="off">
+                <input type="color" id="player-color" value="#3498db" title="Avatar color">
+            </div>
+            <div class="upload-area-menu">
+                <label id="upload-btn" for="stl-upload">Upload STL</label>
+                <input type="file" id="stl-upload" accept=".stl" style="display:none">
+                <label class="scale-label">Scale: <input type="number" id="import-scale" value="1" step="any" min="0.0001" autocomplete="off"></label>
+            </div>
+            <p>Click to enter the world</p>
+            <div class="controls-help">
+                <div class="col">
+                    <h3>Movement</h3>
+                    <p><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> Move</p>
+                    <p><kbd>Space</kbd> Jump</p>
+                    <p><kbd>Shift</kbd> Sprint</p>
+                </div>
+                <div class="col">
+                    <h3>Modes</h3>
+                    <p><kbd>F</kbd> Toggle Fly</p>
+                    <p><kbd>C</kbd> Toggle Clip</p>
+                    <p><kbd>Esc</kbd> Release mouse</p>
+                </div>
+                <div class="col">
+                    <h3>Objects</h3>
+                    <p><kbd>Click</kbd> Select STL</p>
+                    <p><kbd>G</kbd> Translate mode</p>
+                    <p><kbd>R</kbd> Rotate mode</p>
+                    <p><kbd>T</kbd> Scale mode</p>
+                    <p><kbd>Arrows</kbd> Transform</p>
+                    <p><kbd>PgUp/Dn</kbd> Y axis</p>
+                    <p><kbd>Shift</kbd> Fine adjust</p>
+                    <p><kbd>Delete</kbd> Remove STL</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- HUD overlay -->
+    <div id="hud">
+        <div id="crosshair">+</div>
+        <div id="mode-indicators">
+            <span id="fly-indicator" class="mode-off">FLY</span>
+            <span id="clip-indicator" class="mode-off">CLIP</span>
+            <span id="transform-indicator" class="mode-off">---</span>
+        </div>
+        <div id="player-count">Players: 1</div>
+<div id="position-display"></div>
+    </div>
+
+    <script type="module" src="/static/js/main.js"></script>
+</body>
+</html>
