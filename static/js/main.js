@@ -677,8 +677,10 @@ function loadSTLModel(modelInfo) {
         mesh.rotation.set(...modelInfo.rotation);
         mesh.scale.fromArray(modelInfo.scale);
 
-        // Auto-lift: shift up so the bounding box bottom sits at ground level
+        // On fresh import: center geometry so the model appears at the player,
+        // then lift so the bottom sits at ground level
         if (modelInfo.autoLift) {
+            geometry.center(); // shifts geometry so bounding box center is at origin
             geometry.computeBoundingBox();
             const bb = geometry.boundingBox.clone();
             bb.min.multiply(mesh.scale);
