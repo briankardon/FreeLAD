@@ -238,6 +238,11 @@ function onKeyDown(e) {
             updateModeIndicators();
             break;
 
+        // --- Drop selected model to ground ---
+        case "KeyQ":
+            if (selectedModel && canEdit()) groundSelectedModel();
+            break;
+
         // --- Object transform mode selection (toggle on/off, respects editing lock) ---
         case "KeyG":
             if (!canEdit()) break;
@@ -734,6 +739,17 @@ function deselectModel() {
     selectedModel = null;
     transformMode = null;
     updateModeIndicators();
+}
+
+function groundSelectedModel() {
+    const mesh = stlMeshes.get(selectedModel);
+    if (!mesh) return;
+    mesh.geometry.computeBoundingBox();
+    const bb = mesh.geometry.boundingBox.clone();
+    bb.min.multiply(mesh.scale);
+    bb.max.multiply(mesh.scale);
+    mesh.position.y = -bb.min.y;
+    broadcastSTLTransform(selectedModel);
 }
 
 function deleteSelectedModel() {
