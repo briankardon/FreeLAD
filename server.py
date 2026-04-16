@@ -29,19 +29,50 @@ admin_settings = {
     "max_bbox": 0,             # max bounding box dimension for uploads (0 = unlimited)
 }
 
+def meta_path(stl_filename):
+    """Return the path to the metadata JSON file for an STL."""
+    return os.path.join(STL_DIR, stl_filename + ".json")
+
+
+def save_meta(model):
+    """Write a model's metadata to its companion JSON file."""
+    data = {
+        "original_name": model.get("original_name", model["filename"]),
+        "position": model["position"],
+        "rotation": model["rotation"],
+        "scale": model["scale"],
+        "color": model.get("color", "#aaaacc"),
+    }
+    with open(meta_path(model["filename"]), "w") as f:
+        json.dump(data, f, indent=2)
+
+
+def load_meta(stl_filename):
+    """Load metadata from companion JSON, or return defaults."""
+    mp = meta_path(stl_filename)
+    if os.path.exists(mp):
+        try:
+            with open(mp) as f:
+                return json.load(f)
+        except (json.JSONDecodeError, OSError):
+            pass
+    return None
+
+
 # Load existing STL files from disk on startup
 def load_existing_stls():
     for filename in os.listdir(STL_DIR):
         if filename.lower().endswith(".stl"):
             model_id = str(uuid.uuid4())
+            meta = load_meta(filename)
             stl_models[model_id] = {
                 "id": model_id,
                 "filename": filename,
-                "original_name": filename,
-                "position": [0, 0, 0],
-                "rotation": [0, 0, 0],
-                "scale": [1, 1, 1],
-                "color": "#aaaacc",
+                "original_name": meta["original_name"] if meta else filename,
+                "position": meta["position"] if meta else [0, 0, 0],
+                "rotation": meta["rotation"] if meta else [0, 0, 0],
+                "scale": meta["scale"] if meta else [1, 1, 1],
+                "color": meta["color"] if meta else "#aaaacc",
             }
 
 load_existing_stls()
@@ -139,6 +170,8 @@ def upload_stl():
         "scale": [scale, scale, scale],
         "color": color,
     }
+
+    save_meta(stl_models[model_id])
 
     # Broadcast new model to all clients (autoLift tells clients to adjust Y)
     uploader = request.form.get("uploader", "")
@@ -254,6 +287,7 @@ def on_stl_transform(data):
             stl_models[model_id]["rotation"] = data["rotation"]
         if "scale" in data:
             stl_models[model_id]["scale"] = data["scale"]
+        save_meta(stl_models[model_id])
         emit("stl_transformed", stl_models[model_id], broadcast=True, include_self=False)
 
 
@@ -269,6 +303,9 @@ def on_stl_delete(data):
         filepath = os.path.join(STL_DIR, model["filename"])
         if os.path.exists(filepath):
             os.remove(filepath)
+        mp = meta_path(model["filename"])
+        if os.path.exists(mp):
+            os.remove(mp)
         emit("stl_removed", {"id": model_id}, broadcast=True)
         broadcast_admin_state()
 
@@ -299,6 +336,9 @@ def on_admin_delete_model(data):
         filepath = os.path.join(STL_DIR, model["filename"])
         if os.path.exists(filepath):
             os.remove(filepath)
+        mp = meta_path(model["filename"])
+        if os.path.exists(mp):
+            os.remove(mp)
         socketio.emit("stl_removed", {"id": model_id})
         broadcast_admin_state()
 
