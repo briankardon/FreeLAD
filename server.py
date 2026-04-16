@@ -148,6 +148,23 @@ def upload_stl():
     filepath = os.path.join(STL_DIR, safe_name)
     f.save(filepath)
 
+    # Replace-existing flow: swap the file but keep the model's transforms/color
+    replace_id = request.form.get("replace_id", "").strip()
+    if replace_id and replace_id in stl_models:
+        old_model = stl_models[replace_id]
+        old_filepath = os.path.join(STL_DIR, old_model["filename"])
+        old_metapath = meta_path(old_model["filename"])
+        if os.path.exists(old_filepath):
+            os.remove(old_filepath)
+        if os.path.exists(old_metapath):
+            os.remove(old_metapath)
+        old_model["filename"] = safe_name
+        old_model["original_name"] = original_name
+        save_meta(old_model)
+        socketio.emit("stl_file_replaced", old_model)
+        broadcast_admin_state()
+        return jsonify(old_model)
+
     try:
         scale = float(request.form.get("scale", 1))
     except (TypeError, ValueError):
@@ -174,7 +191,6 @@ def upload_stl():
     save_meta(stl_models[model_id])
 
     # Broadcast new model to all clients (autoLift tells clients to adjust Y)
-    uploader = request.form.get("uploader", "")
     broadcast_data = {
         **stl_models[model_id],
         "autoLift": True,

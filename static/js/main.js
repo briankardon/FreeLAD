@@ -672,6 +672,7 @@ function loadSTLModel(modelInfo) {
         mesh.castShadow = true;
         mesh.receiveShadow = true;
         mesh.userData.modelId = modelInfo.id;
+        mesh.userData.originalName = modelInfo.original_name || modelInfo.filename;
 
         mesh.position.fromArray(modelInfo.position);
         mesh.rotation.set(...modelInfo.rotation);
@@ -785,6 +786,17 @@ async function onSTLUpload(e) {
     const file = e.target.files[0];
     if (!file) return;
 
+    // Check for an existing model with the same original filename
+    let replaceId = null;
+    for (const mesh of stlMeshes.values()) {
+        if (mesh.userData.originalName === file.name) {
+            if (confirm(`A model named "${file.name}" already exists. Replace it? (Its position, rotation, scale, and color will be preserved.)\n\nClick Cancel to upload as a new model instead.`)) {
+                replaceId = mesh.userData.modelId;
+            }
+            break;
+        }
+    }
+
     const scale = parseFloat(document.getElementById("import-scale").value) || 1;
     // Place the model at the player's feet position
     const pos = camera.position.clone();
@@ -796,6 +808,7 @@ async function onSTLUpload(e) {
     formData.append("position", JSON.stringify([pos.x, pos.y, pos.z]));
     formData.append("uploader", myId);
     formData.append("color", document.getElementById("import-color").value);
+    if (replaceId) formData.append("replace_id", replaceId);
 
     try {
         const resp = await fetch("/upload_stl", { method: "POST", body: formData });
@@ -873,6 +886,18 @@ function initNetwork() {
             mesh.rotation.set(...modelInfo.rotation);
             mesh.scale.fromArray(modelInfo.scale);
         }
+    });
+
+    socket.on("stl_file_replaced", (modelInfo) => {
+        // Swap out geometry, keep transforms and color
+        const mesh = stlMeshes.get(modelInfo.id);
+        if (!mesh) return;
+        stlLoader.load(`/stl_files/${modelInfo.filename}`, (geometry) => {
+            geometry.computeVertexNormals();
+            mesh.geometry.dispose();
+            mesh.geometry = geometry;
+            mesh.userData.originalName = modelInfo.original_name;
+        });
     });
 
     socket.on("stl_removed", (data) => {
