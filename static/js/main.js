@@ -38,6 +38,8 @@ let onGround = false;
 let flyMode = false;
 let clipMode = false;
 let sprinting = false;
+let flashlightOn = false;
+let flashlight, flashlightTarget;
 const moveState = { forward: false, backward: false, left: false, right: false, up: false, down: false };
 
 // STL state
@@ -114,6 +116,17 @@ function init() {
     const grid = new THREE.GridHelper(200, 200, 0x888888, 0x444444);
     grid.position.y = 0.01;
     scene.add(grid);
+
+    // Player flashlight (headlamp) - attached to camera so it follows look direction
+    flashlight = new THREE.SpotLight(0xffe0b0, 5, 50, Math.PI / 6, 0.4, 1);
+    flashlight.visible = false;
+    flashlightTarget = new THREE.Object3D();
+    flashlightTarget.position.set(0, 0, -1);
+    camera.add(flashlight);
+    camera.add(flashlightTarget);
+    flashlight.target = flashlightTarget;
+    flashlight.position.set(0, 0, 0);
+    scene.add(camera); // camera must be in scene graph for children to render
 
     // Pointer lock controls - used only for lock/unlock management, not rotation
     controls = new PointerLockControls(camera, document.body);
@@ -214,6 +227,11 @@ function onKeyDown(e) {
             break;
         case "KeyC":
             clipMode = !clipMode;
+            updateModeIndicators();
+            break;
+        case "KeyL":
+            flashlightOn = !flashlightOn;
+            flashlight.visible = flashlightOn;
             updateModeIndicators();
             break;
 
@@ -359,6 +377,7 @@ function updateUploadVisibility(enabled) {
 function updateModeIndicators() {
     document.getElementById("fly-indicator").className = flyMode ? "mode-on" : "mode-off";
     document.getElementById("clip-indicator").className = clipMode ? "mode-on" : "mode-off";
+    document.getElementById("light-indicator").className = flashlightOn ? "mode-on" : "mode-off";
 
     // Transform mode indicator
     const el = document.getElementById("transform-indicator");
@@ -845,6 +864,7 @@ function sendPlayerUpdate() {
     socket.emit("player_update", {
         position: camera.position.toArray(),
         rotation: [dir.x, dir.y, dir.z],
+        flashlight: flashlightOn,
     });
 }
 
@@ -896,6 +916,16 @@ function addRemotePlayer(playerData) {
     label.scale.set(1.5, 0.375, 1);
     group.add(label);
 
+    // Flashlight for remote player
+    const rpLight = new THREE.SpotLight(0xffe0b0, 5, 50, Math.PI / 6, 0.4, 1);
+    rpLight.position.set(0, 1.4, 0); // head level
+    rpLight.visible = false;
+    const rpLightTarget = new THREE.Object3D();
+    rpLightTarget.position.set(0, 1.4, -5); // forward
+    group.add(rpLight);
+    group.add(rpLightTarget);
+    rpLight.target = rpLightTarget;
+
     if (playerData.position) {
         group.position.fromArray(playerData.position);
         group.position.y -= EYE_HEIGHT;
@@ -904,6 +934,8 @@ function addRemotePlayer(playerData) {
     scene.add(group);
     remotePlayers.set(playerData.id, {
         group,
+        light: rpLight,
+        lightTarget: rpLightTarget,
         targetPos: group.position.clone(),
         targetDir: new THREE.Vector3(0, 0, -1),
     });
@@ -959,6 +991,13 @@ function updateRemotePlayer(data) {
     rp.targetPos.fromArray(data.position);
     rp.targetPos.y -= EYE_HEIGHT;
     rp.targetDir.fromArray(data.rotation);
+    // Update flashlight
+    rp.light.visible = !!data.flashlight;
+    if (data.flashlight) {
+        // Point light target in the look direction (world space -> local offset)
+        const dir = new THREE.Vector3().fromArray(data.rotation);
+        rp.lightTarget.position.set(dir.x * 5, 1.4 + dir.y * 5, dir.z * 5);
+    }
 }
 
 function interpolateRemotePlayers(delta) {

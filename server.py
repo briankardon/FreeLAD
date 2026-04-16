@@ -230,10 +230,12 @@ def on_player_update(data):
     if sid in players:
         players[sid]["position"] = data.get("position", players[sid]["position"])
         players[sid]["rotation"] = data.get("rotation", players[sid]["rotation"])
+        players[sid]["flashlight"] = data.get("flashlight", False)
         emit("player_moved", {
             "id": sid,
             "position": players[sid]["position"],
             "rotation": players[sid]["rotation"],
+            "flashlight": players[sid]["flashlight"],
         }, broadcast=True, include_self=False)
 
 
