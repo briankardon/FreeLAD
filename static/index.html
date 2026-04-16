@@ -47,6 +47,24 @@
                 <div class="admin-row">
                     <button id="admin-teleport-btn">Teleport all here</button>
                 </div>
+                <div class="admin-lighting">
+                    <h4>Lighting</h4>
+                    <div class="light-row">
+                        <label>Ambient</label>
+                        <input type="range" id="admin-ambient-intensity" min="0" max="3" step="0.05" value="0.75">
+                        <input type="color" id="admin-ambient-color" value="#606060">
+                    </div>
+                    <div class="light-row">
+                        <label>Sun</label>
+                        <input type="range" id="admin-dir-intensity" min="0" max="4" step="0.05" value="1">
+                        <input type="color" id="admin-dir-color" value="#ffffff">
+                    </div>
+                    <div class="light-row">
+                        <label>Sky</label>
+                        <input type="range" id="admin-hemi-intensity" min="0" max="2" step="0.05" value="0.3">
+                        <input type="color" id="admin-hemi-color" value="#87ceeb">
+                    </div>
+                </div>
                 <div class="admin-lists">
                     <div class="admin-list-col">
                         <h4>Models</h4>

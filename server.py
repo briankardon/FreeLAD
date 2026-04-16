@@ -182,6 +182,7 @@ def on_connect():
         "stl_models": list(stl_models.values()),
         "editing_enabled": admin_settings["editing_enabled"],
         "upload_enabled": admin_settings["upload_enabled"],
+        "lighting": admin_settings.get("lighting"),
     })
 
     # Notify others
@@ -345,6 +346,15 @@ def on_admin_teleport_all(data):
     position = data.get("position", [0, 1.0, 0])
     socketio.emit("teleport", {"position": position})
     print(f"[ADMIN] Teleported all players to {position}")
+
+
+@socketio.on("admin_set_lighting")
+def on_admin_set_lighting(data):
+    sid = request.sid
+    if not is_admin(sid):
+        return
+    admin_settings["lighting"] = data
+    socketio.emit("lighting_changed", data)
 
 
 if __name__ == "__main__":

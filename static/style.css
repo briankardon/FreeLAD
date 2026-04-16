@@ -291,6 +291,62 @@ canvas {
     background: rgba(231, 76, 60, 0.5);
 }
 
+.admin-lighting {
+    margin-top: 8px;
+    border-top: 1px solid rgba(255, 140, 0, 0.2);
+    padding-top: 8px;
+}
+
+.admin-lighting h4 {
+    color: #ffa726;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-bottom: 6px;
+    text-align: center;
+}
+
+.light-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 4px;
+    font-size: 12px;
+    color: #ccc;
+}
+
+.light-row label {
+    width: 50px;
+    text-align: right;
+    flex-shrink: 0;
+}
+
+.light-row input[type="range"] {
+    flex: 1;
+    height: 4px;
+    accent-color: #ffa726;
+}
+
+.light-row input[type="color"] {
+    width: 28px;
+    height: 28px;
+    border: 1px solid #666;
+    border-radius: 3px;
+    background: none;
+    cursor: pointer;
+    padding: 1px;
+    flex-shrink: 0;
+}
+
+.light-row input[type="color"]::-webkit-color-swatch-wrapper {
+    padding: 0;
+}
+
+.light-row input[type="color"]::-webkit-color-swatch {
+    border: none;
+    border-radius: 2px;
+}
+
 .controls-help {
     display: flex;
     gap: 40px;

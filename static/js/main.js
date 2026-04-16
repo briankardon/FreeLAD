@@ -27,6 +27,7 @@ const SCALE_STEP = 0.1;
 // ============================================================
 let camera, scene, renderer, controls;
 let clock, raycaster, mouseRaycaster;
+let ambientLight, dirLight, hemiLight;
 
 // Camera rotation (tracked as plain numbers to avoid Euler extraction instability)
 let cameraYaw = 0;
@@ -87,9 +88,10 @@ function init() {
     document.body.appendChild(renderer.domElement);
 
     // Lights
-    scene.add(new THREE.AmbientLight(0x606060, 1.5));
+    ambientLight = new THREE.AmbientLight(0x606060, 0.75);
+    scene.add(ambientLight);
 
-    const dirLight = new THREE.DirectionalLight(0xffffff, 2);
+    dirLight = new THREE.DirectionalLight(0xffffff, 1);
     dirLight.position.set(50, 100, 50);
     dirLight.castShadow = true;
     dirLight.shadow.mapSize.width = 2048;
@@ -102,7 +104,8 @@ function init() {
     dirLight.shadow.camera.bottom = -100;
     scene.add(dirLight);
 
-    scene.add(new THREE.HemisphereLight(0x87ceeb, 0x362907, 0.6));
+    hemiLight = new THREE.HemisphereLight(0x87ceeb, 0x362907, 0.3);
+    scene.add(hemiLight);
 
     // Ground plane
     const groundGeo = new THREE.PlaneGeometry(GROUND_PLANE_SIZE, GROUND_PLANE_SIZE);
@@ -421,9 +424,59 @@ function initAdminUI() {
         socket.emit("admin_teleport_all", { position: camera.position.toArray() });
     });
 
+    // Lighting controls
+    const lightInputs = [
+        ["admin-ambient-intensity", "admin-ambient-color"],
+        ["admin-dir-intensity", "admin-dir-color"],
+        ["admin-hemi-intensity", "admin-hemi-color"],
+    ];
+    for (const [sliderId, colorId] of lightInputs) {
+        for (const id of [sliderId, colorId]) {
+            document.getElementById(id).addEventListener("input", () => broadcastLighting());
+        }
+    }
+
     // Prevent blocker click-through on admin panel inputs
     document.getElementById("admin-panel").addEventListener("click", (e) => e.stopPropagation());
     document.getElementById("admin-login").addEventListener("click", (e) => e.stopPropagation());
+}
+
+function broadcastLighting() {
+    if (!socket) return;
+    socket.emit("admin_set_lighting", {
+        ambient: { intensity: parseFloat(document.getElementById("admin-ambient-intensity").value), color: document.getElementById("admin-ambient-color").value },
+        directional: { intensity: parseFloat(document.getElementById("admin-dir-intensity").value), color: document.getElementById("admin-dir-color").value },
+        hemisphere: { intensity: parseFloat(document.getElementById("admin-hemi-intensity").value), color: document.getElementById("admin-hemi-color").value },
+    });
+}
+
+function applyLighting(data) {
+    if (data.ambient) {
+        ambientLight.intensity = data.ambient.intensity;
+        ambientLight.color.set(data.ambient.color);
+    }
+    if (data.directional) {
+        dirLight.intensity = data.directional.intensity;
+        dirLight.color.set(data.directional.color);
+    }
+    if (data.hemisphere) {
+        hemiLight.intensity = data.hemisphere.intensity;
+        hemiLight.color.set(data.hemisphere.color);
+    }
+    // Update admin sliders if present
+    if (document.getElementById("admin-panel").classList.contains("hidden")) return;
+    if (data.ambient) {
+        document.getElementById("admin-ambient-intensity").value = data.ambient.intensity;
+        document.getElementById("admin-ambient-color").value = data.ambient.color;
+    }
+    if (data.directional) {
+        document.getElementById("admin-dir-intensity").value = data.directional.intensity;
+        document.getElementById("admin-dir-color").value = data.directional.color;
+    }
+    if (data.hemisphere) {
+        document.getElementById("admin-hemi-intensity").value = data.hemisphere.intensity;
+        document.getElementById("admin-hemi-color").value = data.hemisphere.color;
+    }
 }
 
 function updateAdminPanel(data) {
@@ -766,6 +819,7 @@ function initNetwork() {
         }
         editingEnabled = data.editing_enabled;
         updateUploadVisibility(data.upload_enabled);
+        if (data.lighting) applyLighting(data.lighting);
         updateModeIndicators();
         updatePlayerCount();
     });
@@ -849,6 +903,10 @@ function initNetwork() {
 
     socket.on("upload_enabled_changed", (data) => {
         updateUploadVisibility(data.enabled);
+    });
+
+    socket.on("lighting_changed", (data) => {
+        applyLighting(data);
     });
 
     socket.on("teleport", (data) => {
@@ -994,9 +1052,10 @@ function updateRemotePlayer(data) {
     // Update flashlight
     rp.light.visible = !!data.flashlight;
     if (data.flashlight) {
-        // Point light target in the look direction (world space -> local offset)
-        const dir = new THREE.Vector3().fromArray(data.rotation);
-        rp.lightTarget.position.set(dir.x * 5, 1.4 + dir.y * 5, dir.z * 5);
+        // Group rotation handles yaw. Only need pitch for the local-space target.
+        const dirY = data.rotation[1];
+        const horizLen = Math.sqrt(data.rotation[0] ** 2 + data.rotation[2] ** 2);
+        rp.lightTarget.position.set(0, 1.4 + dirY * 5, -horizLen * 5);
     }
 }
 
