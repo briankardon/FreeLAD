@@ -788,6 +788,8 @@ function initNetwork() {
             isAdmin = true;
             document.getElementById("admin-login").style.display = "none";
             document.getElementById("admin-panel").classList.remove("hidden");
+            updateUploadVisibility(false); // re-evaluate with isAdmin=true
+            updateModeIndicators();
         } else {
             document.getElementById("admin-password").style.borderColor = "#e74c3c";
             setTimeout(() => {
