@@ -291,6 +291,21 @@ canvas {
     background: rgba(231, 76, 60, 0.5);
 }
 
+.admin-ctf {
+    margin-top: 8px;
+    border-top: 1px solid rgba(255, 140, 0, 0.2);
+    padding-top: 8px;
+}
+
+.admin-ctf h4 {
+    color: #ffa726;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-bottom: 6px;
+    text-align: center;
+}
+
 .admin-lighting {
     margin-top: 8px;
     border-top: 1px solid rgba(255, 140, 0, 0.2);

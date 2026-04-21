@@ -29,6 +29,41 @@ admin_settings = {
     "max_bbox": 0,             # max bounding box dimension for uploads (0 = unlimited)
 }
 
+# Game mode state: "sandbox" (default) or "ctf"
+game_mode = "sandbox"
+
+# CTF state (used only when game_mode == "ctf")
+ctf_state = {
+    "phase": "pregame",                       # "pregame" or "playing"
+    "teams": {},                              # sid -> "red" | "blue" (absent = spectator)
+    "spawns": {"red": None, "blue": None},    # [x, y, z]
+    "flag_home": {"red": None, "blue": None}, # [x, y, z]
+    "flag_pos": {"red": None, "blue": None},  # current flag position
+    "flag_holder": {"red": None, "blue": None}, # sid of player carrying, or None
+    "scores": {"red": 0, "blue": 0},
+}
+
+
+def ctf_public_state():
+    """CTF state safe to broadcast (no internal references)."""
+    return {
+        "phase": ctf_state["phase"],
+        "teams": dict(ctf_state["teams"]),
+        "spawns": ctf_state["spawns"],
+        "flag_home": ctf_state["flag_home"],
+        "flag_pos": ctf_state["flag_pos"],
+        "flag_holder": ctf_state["flag_holder"],
+        "scores": ctf_state["scores"],
+    }
+
+
+def broadcast_game_state():
+    """Broadcast current game mode and CTF state to all clients."""
+    socketio.emit("game_state", {
+        "mode": game_mode,
+        "ctf": ctf_public_state() if game_mode == "ctf" else None,
+    })
+
 def meta_path(stl_filename):
     """Return the path to the metadata JSON file for an STL."""
     return os.path.join(STL_DIR, stl_filename + ".json")
@@ -232,6 +267,8 @@ def on_connect():
         "editing_enabled": admin_settings["editing_enabled"],
         "upload_enabled": admin_settings["upload_enabled"],
         "lighting": admin_settings.get("lighting"),
+        "game_mode": game_mode,
+        "ctf": ctf_public_state() if game_mode == "ctf" else None,
     })
 
     # Notify others
@@ -411,6 +448,31 @@ def on_admin_set_lighting(data):
         return
     admin_settings["lighting"] = data
     socketio.emit("lighting_changed", data)
+
+
+# --- CTF Game Mode Events ---
+
+@socketio.on("admin_set_mode")
+def on_admin_set_mode(data):
+    global game_mode
+    sid = request.sid
+    if not is_admin(sid):
+        return
+    new_mode = data.get("mode", "sandbox")
+    if new_mode not in ("sandbox", "ctf"):
+        return
+    game_mode = new_mode
+    if new_mode == "ctf":
+        # Reset CTF state when entering mode
+        ctf_state["phase"] = "pregame"
+        ctf_state["teams"] = {}
+        ctf_state["spawns"] = {"red": None, "blue": None}
+        ctf_state["flag_home"] = {"red": None, "blue": None}
+        ctf_state["flag_pos"] = {"red": None, "blue": None}
+        ctf_state["flag_holder"] = {"red": None, "blue": None}
+        ctf_state["scores"] = {"red": 0, "blue": 0}
+    broadcast_game_state()
+    print(f"[ADMIN] Game mode set to {new_mode}")
 
 
 if __name__ == "__main__":

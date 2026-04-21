@@ -28,6 +28,11 @@ const SCALE_STEP = 0.1;
 let camera, scene, renderer, controls;
 let clock, raycaster, mouseRaycaster;
 let ambientLight, dirLight, hemiLight;
+let sandboxGround, ctfGroundBlue, ctfGroundRed;
+
+// Game state
+let gameMode = "sandbox";
+let ctfState = null;
 
 // Camera rotation (tracked as plain numbers to avoid Euler extraction instability)
 let cameraYaw = 0;
@@ -107,13 +112,28 @@ function init() {
     hemiLight = new THREE.HemisphereLight(0x87ceeb, 0x362907, 0.3);
     scene.add(hemiLight);
 
-    // Ground plane
+    // Ground planes - sandbox has a single green plane; CTF has red/blue halves
     const groundGeo = new THREE.PlaneGeometry(GROUND_PLANE_SIZE, GROUND_PLANE_SIZE);
-    const groundMat = new THREE.MeshStandardMaterial({ color: 0x556b2f, roughness: 0.9 });
-    const ground = new THREE.Mesh(groundGeo, groundMat);
-    ground.rotation.x = -Math.PI / 2;
-    ground.receiveShadow = true;
-    scene.add(ground);
+    sandboxGround = new THREE.Mesh(groundGeo, new THREE.MeshStandardMaterial({ color: 0x556b2f, roughness: 0.9 }));
+    sandboxGround.rotation.x = -Math.PI / 2;
+    sandboxGround.receiveShadow = true;
+    scene.add(sandboxGround);
+
+    // CTF halves (hidden in sandbox mode); each is a half-plane, positioned left/right of X=0
+    const halfGeo = new THREE.PlaneGeometry(GROUND_PLANE_SIZE / 2, GROUND_PLANE_SIZE);
+    ctfGroundBlue = new THREE.Mesh(halfGeo, new THREE.MeshStandardMaterial({ color: 0x2e5a8a, roughness: 0.9 }));
+    ctfGroundBlue.rotation.x = -Math.PI / 2;
+    ctfGroundBlue.position.x = -GROUND_PLANE_SIZE / 4;
+    ctfGroundBlue.receiveShadow = true;
+    ctfGroundBlue.visible = false;
+    scene.add(ctfGroundBlue);
+
+    ctfGroundRed = new THREE.Mesh(halfGeo, new THREE.MeshStandardMaterial({ color: 0x8a2e2e, roughness: 0.9 }));
+    ctfGroundRed.rotation.x = -Math.PI / 2;
+    ctfGroundRed.position.x = GROUND_PLANE_SIZE / 4;
+    ctfGroundRed.receiveShadow = true;
+    ctfGroundRed.visible = false;
+    scene.add(ctfGroundRed);
 
     // Grid for orientation
     const grid = new THREE.GridHelper(200, 200, 0x888888, 0x444444);
@@ -441,6 +461,14 @@ function initAdminUI() {
         }
     }
 
+    // Game mode radios
+    document.getElementById("admin-mode-sandbox").addEventListener("change", (e) => {
+        if (e.target.checked) socket.emit("admin_set_mode", { mode: "sandbox" });
+    });
+    document.getElementById("admin-mode-ctf").addEventListener("change", (e) => {
+        if (e.target.checked) socket.emit("admin_set_mode", { mode: "ctf" });
+    });
+
     // Prevent blocker click-through on admin panel inputs
     document.getElementById("admin-panel").addEventListener("click", (e) => e.stopPropagation());
     document.getElementById("admin-login").addEventListener("click", (e) => e.stopPropagation());
@@ -453,6 +481,22 @@ function broadcastLighting() {
         directional: { intensity: parseFloat(document.getElementById("admin-dir-intensity").value), color: document.getElementById("admin-dir-color").value },
         hemisphere: { intensity: parseFloat(document.getElementById("admin-hemi-intensity").value), color: document.getElementById("admin-hemi-color").value },
     });
+}
+
+function applyGameState(mode, ctf) {
+    gameMode = mode;
+    ctfState = ctf;
+    const ctfActive = (mode === "ctf");
+    sandboxGround.visible = !ctfActive;
+    ctfGroundBlue.visible = ctfActive;
+    ctfGroundRed.visible = ctfActive;
+    // Sync admin panel radios
+    const sandboxRadio = document.getElementById("admin-mode-sandbox");
+    const ctfRadio = document.getElementById("admin-mode-ctf");
+    if (sandboxRadio && ctfRadio) {
+        sandboxRadio.checked = !ctfActive;
+        ctfRadio.checked = ctfActive;
+    }
 }
 
 function applyLighting(data) {
@@ -849,6 +893,7 @@ function initNetwork() {
         editingEnabled = data.editing_enabled;
         updateUploadVisibility(data.upload_enabled);
         if (data.lighting) applyLighting(data.lighting);
+        applyGameState(data.game_mode || "sandbox", data.ctf || null);
         updateModeIndicators();
         updatePlayerCount();
     });
@@ -948,6 +993,10 @@ function initNetwork() {
 
     socket.on("lighting_changed", (data) => {
         applyLighting(data);
+    });
+
+    socket.on("game_state", (data) => {
+        applyGameState(data.mode || "sandbox", data.ctf || null);
     });
 
     socket.on("teleport", (data) => {
