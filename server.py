@@ -131,6 +131,16 @@ def is_admin(sid):
     return sid in admin_sids
 
 
+def can_edit(sid):
+    """Can this client edit/delete/transform models?"""
+    if is_admin(sid):
+        return True
+    # During CTF, only admins can edit
+    if game_mode == "ctf":
+        return False
+    return admin_settings["editing_enabled"]
+
+
 def broadcast_admin_state(target_sid=None):
     """Send current admin settings and model list to an admin client."""
     data = {
@@ -140,9 +150,10 @@ def broadcast_admin_state(target_sid=None):
             for m in stl_models.values()
         ],
         "players": [
-            {"id": p["id"], "name": p["name"]}
+            {"id": p["id"], "name": p["name"], "team": ctf_state["teams"].get(p["id"])}
             for p in players.values()
         ],
+        "game_mode": game_mode,
     }
     if target_sid:
         emit("admin_state", data, to=target_sid)
@@ -165,10 +176,13 @@ def serve_stl(filename):
 
 @app.route("/upload_stl", methods=["POST"])
 def upload_stl():
-    # Enforce upload lock for non-admins
+    # Enforce upload lock for non-admins (always locked during CTF mode)
     uploader = request.form.get("uploader", "")
-    if not admin_settings["upload_enabled"] and not is_admin(uploader):
-        return jsonify({"error": "Uploads are currently disabled"}), 403
+    if not is_admin(uploader):
+        if game_mode == "ctf":
+            return jsonify({"error": "Uploads disabled during CTF mode"}), 403
+        if not admin_settings["upload_enabled"]:
+            return jsonify({"error": "Uploads are currently disabled"}), 403
 
     if "file" not in request.files:
         return jsonify({"error": "No file provided"}), 400
@@ -329,8 +343,7 @@ def on_player_update(data):
 @socketio.on("stl_transform")
 def on_stl_transform(data):
     sid = request.sid
-    # Enforce editing lock for non-admins
-    if not admin_settings["editing_enabled"] and not is_admin(sid):
+    if not can_edit(sid):
         return
     model_id = data.get("id")
     if model_id in stl_models:
@@ -347,8 +360,7 @@ def on_stl_transform(data):
 @socketio.on("stl_delete")
 def on_stl_delete(data):
     sid = request.sid
-    # Enforce editing lock for non-admins
-    if not admin_settings["editing_enabled"] and not is_admin(sid):
+    if not can_edit(sid):
         return
     model_id = data.get("id")
     if model_id in stl_models:
@@ -472,7 +484,54 @@ def on_admin_set_mode(data):
         ctf_state["flag_holder"] = {"red": None, "blue": None}
         ctf_state["scores"] = {"red": 0, "blue": 0}
     broadcast_game_state()
+    broadcast_admin_state()
     print(f"[ADMIN] Game mode set to {new_mode}")
+
+
+@socketio.on("admin_ctf_assign")
+def on_admin_ctf_assign(data):
+    """Set a single player's team: 'red', 'blue', or None (spectator)."""
+    sid = request.sid
+    if not is_admin(sid) or game_mode != "ctf":
+        return
+    target_sid = data.get("sid")
+    team = data.get("team")  # "red", "blue", or None
+    if target_sid not in players:
+        return
+    if team in ("red", "blue"):
+        ctf_state["teams"][target_sid] = team
+    elif team is None:
+        ctf_state["teams"].pop(target_sid, None)
+    broadcast_game_state()
+    broadcast_admin_state()
+
+
+@socketio.on("admin_ctf_randomize")
+def on_admin_ctf_randomize(data):
+    """Randomly split all currently-connected players between red and blue."""
+    import random
+    sid = request.sid
+    if not is_admin(sid) or game_mode != "ctf":
+        return
+    sids = list(players.keys())
+    random.shuffle(sids)
+    ctf_state["teams"] = {}
+    for i, psid in enumerate(sids):
+        ctf_state["teams"][psid] = "red" if i % 2 == 0 else "blue"
+    broadcast_game_state()
+    broadcast_admin_state()
+    print(f"[ADMIN] CTF teams randomized")
+
+
+@socketio.on("admin_ctf_clear_teams")
+def on_admin_ctf_clear_teams(data):
+    """Clear all team assignments (everyone becomes spectator)."""
+    sid = request.sid
+    if not is_admin(sid) or game_mode != "ctf":
+        return
+    ctf_state["teams"] = {}
+    broadcast_game_state()
+    broadcast_admin_state()
 
 
 if __name__ == "__main__":

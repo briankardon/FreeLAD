@@ -57,6 +57,7 @@ let transformMode = null; // null, "translate", "rotate", "scale"
 // Admin state
 let isAdmin = false;
 let editingEnabled = true;
+let uploadEnabled = true;
 
 // Multiplayer state
 let socket;
@@ -392,13 +393,21 @@ function transformSelectedModel(keyCode, fine) {
 }
 
 function canEdit() {
-    return isAdmin || editingEnabled;
+    if (isAdmin) return true;
+    // Non-admins can never edit during CTF
+    if (gameMode === "ctf") return false;
+    return editingEnabled;
 }
 
 function updateUploadVisibility(enabled) {
     const uploadArea = document.querySelector(".upload-area-menu");
-    if (uploadArea) {
-        uploadArea.style.display = (isAdmin || enabled) ? "" : "none";
+    if (!uploadArea) return;
+    if (isAdmin) {
+        uploadArea.style.display = "";
+    } else if (gameMode === "ctf") {
+        uploadArea.style.display = "none";
+    } else {
+        uploadArea.style.display = enabled ? "" : "none";
     }
 }
 
@@ -468,6 +477,12 @@ function initAdminUI() {
     document.getElementById("admin-mode-ctf").addEventListener("change", (e) => {
         if (e.target.checked) socket.emit("admin_set_mode", { mode: "ctf" });
     });
+    document.getElementById("admin-ctf-randomize-btn").addEventListener("click", () => {
+        socket.emit("admin_ctf_randomize", {});
+    });
+    document.getElementById("admin-ctf-clear-btn").addEventListener("click", () => {
+        socket.emit("admin_ctf_clear_teams", {});
+    });
 
     // Prevent blocker click-through on admin panel inputs
     document.getElementById("admin-panel").addEventListener("click", (e) => e.stopPropagation());
@@ -490,12 +505,36 @@ function applyGameState(mode, ctf) {
     sandboxGround.visible = !ctfActive;
     ctfGroundBlue.visible = ctfActive;
     ctfGroundRed.visible = ctfActive;
+    // Update avatar colors (CTF overrides with team color)
+    refreshAllRemoteColors();
     // Sync admin panel radios
     const sandboxRadio = document.getElementById("admin-mode-sandbox");
     const ctfRadio = document.getElementById("admin-mode-ctf");
     if (sandboxRadio && ctfRadio) {
         sandboxRadio.checked = !ctfActive;
         ctfRadio.checked = ctfActive;
+    }
+    const teamRow = document.getElementById("admin-ctf-team-row");
+    if (teamRow) teamRow.style.display = ctfActive ? "" : "none";
+    updateUploadVisibility(uploadEnabled);
+    updateModeIndicators();
+}
+
+function teamColor(team) {
+    if (team === "red") return "#e74c3c";
+    if (team === "blue") return "#3498db";
+    return null;
+}
+
+function refreshAllRemoteColors() {
+    for (const [id, rp] of remotePlayers) {
+        const team = (gameMode === "ctf" && ctfState) ? ctfState.teams[id] : null;
+        const col = teamColor(team) || rp.originalColor;
+        rp.group.children.forEach((child) => {
+            if (child.isMesh && child.material && child.material.color && !child.material.color.equals(new THREE.Color(0xffffff))) {
+                child.material.color.set(col);
+            }
+        });
     }
 }
 
@@ -562,9 +601,31 @@ function updateAdminPanel(data) {
     // Update player list
     const playerList = document.getElementById("admin-player-list");
     playerList.innerHTML = "";
+    const ctfActive = (data.game_mode === "ctf");
     for (const player of data.players) {
         const li = document.createElement("li");
-        li.textContent = player.name;
+        const nameSpan = document.createElement("span");
+        nameSpan.textContent = player.name;
+        li.appendChild(nameSpan);
+
+        if (ctfActive) {
+            // Team assignment buttons
+            const btnGroup = document.createElement("span");
+            btnGroup.className = "team-btn-group";
+            for (const [label, team, bg] of [["R", "red", "#e74c3c"], ["B", "blue", "#3498db"], ["S", null, "#888"]]) {
+                const btn = document.createElement("button");
+                btn.textContent = label;
+                btn.className = "team-btn" + (player.team === team ? " active" : "");
+                btn.style.borderColor = bg;
+                if (player.team === team) btn.style.background = bg;
+                btn.addEventListener("click", (e) => {
+                    e.stopPropagation();
+                    socket.emit("admin_ctf_assign", { sid: player.id, team });
+                });
+                btnGroup.appendChild(btn);
+            }
+            li.appendChild(btnGroup);
+        }
         playerList.appendChild(li);
     }
 }
@@ -891,7 +952,8 @@ function initNetwork() {
             loadSTLModel(model);
         }
         editingEnabled = data.editing_enabled;
-        updateUploadVisibility(data.upload_enabled);
+        uploadEnabled = data.upload_enabled;
+        updateUploadVisibility(uploadEnabled);
         if (data.lighting) applyLighting(data.lighting);
         applyGameState(data.game_mode || "sandbox", data.ctf || null);
         updateModeIndicators();
@@ -988,7 +1050,8 @@ function initNetwork() {
     });
 
     socket.on("upload_enabled_changed", (data) => {
-        updateUploadVisibility(data.enabled);
+        uploadEnabled = data.enabled;
+        updateUploadVisibility(uploadEnabled);
     });
 
     socket.on("lighting_changed", (data) => {
@@ -1086,7 +1149,20 @@ function addRemotePlayer(playerData) {
         lightTarget: rpLightTarget,
         targetPos: group.position.clone(),
         targetDir: new THREE.Vector3(0, 0, -1),
+        originalColor: playerData.color,
     });
+    // Apply team color if CTF is active
+    if (gameMode === "ctf" && ctfState) {
+        const team = ctfState.teams[playerData.id];
+        if (team) {
+            const col = teamColor(team);
+            group.children.forEach((child) => {
+                if (child.isMesh && child.material && child.material.color && !child.material.color.equals(new THREE.Color(0xffffff))) {
+                    child.material.color.set(col);
+                }
+            });
+        }
+    }
 }
 
 function removeRemotePlayer(playerId) {
@@ -1125,7 +1201,11 @@ function updateRemotePlayerName(playerId, name) {
 function updateRemotePlayerColor(playerId, color) {
     const rp = remotePlayers.get(playerId);
     if (!rp) return;
-    const c = new THREE.Color(color);
+    rp.originalColor = color;
+    // If CTF is active and player has a team, team color takes precedence
+    const team = (gameMode === "ctf" && ctfState) ? ctfState.teams[playerId] : null;
+    const displayColor = teamColor(team) || color;
+    const c = new THREE.Color(displayColor);
     rp.group.children.forEach((child) => {
         if (child.isMesh && child.material && !child.material.color.equals(new THREE.Color(0xffffff))) {
             child.material.color.copy(c);

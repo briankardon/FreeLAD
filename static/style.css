@@ -291,6 +291,41 @@ canvas {
     background: rgba(231, 76, 60, 0.5);
 }
 
+.team-btn-group {
+    display: flex;
+    gap: 3px;
+    margin-left: 6px;
+}
+
+.team-btn {
+    padding: 1px 6px !important;
+    font-size: 10px !important;
+    border: 1px solid #666 !important;
+    border-radius: 3px !important;
+    background: rgba(255, 255, 255, 0.08) !important;
+    color: #ccc !important;
+    cursor: pointer;
+    margin-left: 0 !important;
+}
+
+.team-btn.active {
+    color: #fff !important;
+}
+
+#admin-ctf-randomize-btn, #admin-ctf-clear-btn {
+    padding: 5px 12px;
+    font-size: 12px;
+    border: 1px solid #ffa726;
+    border-radius: 4px;
+    background: rgba(255, 167, 38, 0.2);
+    color: #ffa726;
+    cursor: pointer;
+}
+
+#admin-ctf-randomize-btn:hover, #admin-ctf-clear-btn:hover {
+    background: rgba(255, 167, 38, 0.4);
+}
+
 .admin-ctf {
     margin-top: 8px;
     border-top: 1px solid rgba(255, 140, 0, 0.2);
