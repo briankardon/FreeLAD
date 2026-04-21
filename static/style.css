@@ -533,6 +533,26 @@ kbd {
     letter-spacing: 2px;
 }
 
+#flag-banner {
+    position: absolute;
+    top: 80px;
+    left: 50%;
+    transform: translateX(-50%);
+    padding: 6px 20px;
+    background: rgba(255, 215, 0, 0.9);
+    color: #000;
+    font-weight: bold;
+    font-size: 14px;
+    letter-spacing: 2px;
+    border-radius: 4px;
+    animation: pulse 1s ease-in-out infinite;
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 0.85; }
+    50%      { opacity: 1.0; }
+}
+
 #player-count {
     position: absolute;
     top: 12px;

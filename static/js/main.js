@@ -554,13 +554,18 @@ function applyGameState(mode, ctf) {
 
     // Scoreboard
     const scoreboard = document.getElementById("scoreboard");
+    const flagBanner = document.getElementById("flag-banner");
     if (ctfActive) {
         scoreboard.style.display = "";
         document.getElementById("score-blue").textContent = ctfState.scores.blue;
         document.getElementById("score-red").textContent = ctfState.scores.red;
         document.getElementById("scoreboard-phase").textContent = ctfState.phase.toUpperCase();
+        // Show "YOU HAVE THE FLAG" banner when carrying the enemy flag
+        const carrying = (ctfState.flag_holder.red === myId) || (ctfState.flag_holder.blue === myId);
+        flagBanner.style.display = carrying ? "" : "none";
     } else {
         scoreboard.style.display = "none";
+        flagBanner.style.display = "none";
     }
 
     updateUploadVisibility(uploadEnabled);
@@ -647,12 +652,13 @@ function refreshCTFMarkers() {
         const flagHome = ctfActive ? ctfState.flag_home[team] : null;
         const isHeld = ctfActive && ctfState.flag_holder[team];
 
-        if (flagPos && !isHeld) {
+        if (flagPos) {
+            // Keep the flag visible whether held or not - syncHeldFlags() repositions it when held
             if (!markers.flag) {
                 markers.flag = buildFlagMesh(team);
                 scene.add(markers.flag);
             }
-            markers.flag.position.fromArray(flagPos);
+            if (!isHeld) markers.flag.position.fromArray(flagPos);
         } else {
             disposeMarker(markers.flag);
             markers.flag = null;
@@ -1413,12 +1419,37 @@ function onWindowResize() {
 // ============================================================
 // Main Loop
 // ============================================================
+function syncHeldFlags() {
+    // Position flag meshes to their holder's current rendered position each frame
+    if (gameMode !== "ctf" || !ctfState) return;
+    for (const team of ["red", "blue"]) {
+        const holder = ctfState.flag_holder[team];
+        const flagMesh = ctfMarkers[team].flag;
+        if (!holder) continue;
+        // We need a flag mesh to show held flags; create if missing
+        let mesh = flagMesh;
+        if (!mesh) {
+            mesh = buildFlagMesh(team);
+            scene.add(mesh);
+            ctfMarkers[team].flag = mesh;
+        }
+        if (holder === myId) {
+            // Follow local camera: pole base at feet, so position is camera - EYE_HEIGHT
+            mesh.position.set(camera.position.x, camera.position.y - EYE_HEIGHT, camera.position.z);
+        } else {
+            const rp = remotePlayers.get(holder);
+            if (rp) mesh.position.copy(rp.group.position);
+        }
+    }
+}
+
 function animate() {
     requestAnimationFrame(animate);
     const delta = Math.min(clock.getDelta(), 0.1);
 
     updatePlayer(delta);
     interpolateRemotePlayers(delta);
+    syncHeldFlags();
 
     networkTimer += delta;
     if (networkTimer >= NETWORK_UPDATE_RATE) {

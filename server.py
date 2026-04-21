@@ -339,6 +339,10 @@ def on_player_update(data):
             "flashlight": players[sid]["flashlight"],
         }, broadcast=True, include_self=False)
 
+        # Run CTF game logic when active
+        if game_mode == "ctf" and ctf_state["phase"] == "playing":
+            process_ctf_contacts(sid)
+
 
 @socketio.on("stl_transform")
 def on_stl_transform(data):
@@ -537,6 +541,119 @@ def on_admin_ctf_clear_teams(data):
 def side_from_x(x):
     """Return 'blue' for X < 0, 'red' for X > 0."""
     return "blue" if x < 0 else "red"
+
+
+CTF_CONTACT_DIST = 1.5         # avatars touching each other
+CTF_FLAG_CONTACT_DIST = 1.5    # player touching a flag
+
+
+def distance(a, b):
+    return ((a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2 + (a[2] - b[2]) ** 2) ** 0.5
+
+
+def tag_player(sid):
+    """Handle a player being tagged: drop any held flag at current position, teleport to spawn."""
+    if sid not in players:
+        return
+    # If carrying a flag, drop it at current position (ground level)
+    for team in ("red", "blue"):
+        if ctf_state["flag_holder"][team] == sid:
+            pos = players[sid]["position"]
+            # Flag drops at feet level; player position has EYE_HEIGHT offset from client
+            ctf_state["flag_pos"][team] = [pos[0], max(0, pos[1] - 1.6), pos[2]]
+            ctf_state["flag_holder"][team] = None
+    # Teleport to own spawn
+    team = ctf_state["teams"].get(sid)
+    if team and ctf_state["spawns"].get(team):
+        socketio.emit("teleport", {"position": list(ctf_state["spawns"][team])}, to=sid)
+
+
+def process_ctf_contacts(sid):
+    """Run every time a player updates position during CTF. Detect tags and flag interactions."""
+    if sid not in players:
+        return
+    my_team = ctf_state["teams"].get(sid)
+    if my_team not in ("red", "blue"):
+        return  # spectators don't interact
+
+    my_pos = players[sid]["position"]
+    enemy_team = "red" if my_team == "blue" else "blue"
+
+    # My side: blue team's home is X < 0, red team's home is X > 0
+    my_home_side_sign = -1 if my_team == "blue" else 1
+    i_am_on_my_home = (my_pos[0] * my_home_side_sign) > 0
+
+    # Flag interactions -----
+    # 1. Touch enemy flag (not held by anyone): pick it up
+    enemy_flag_pos = ctf_state["flag_pos"][enemy_team]
+    enemy_flag_holder = ctf_state["flag_holder"][enemy_team]
+    if enemy_flag_pos and enemy_flag_holder is None:
+        # Check distance; flag is on ground so compare X,Z primarily
+        if distance(my_pos, [enemy_flag_pos[0], my_pos[1], enemy_flag_pos[2]]) < CTF_FLAG_CONTACT_DIST:
+            ctf_state["flag_holder"][enemy_team] = sid
+            ctf_state["flag_pos"][enemy_team] = list(my_pos)
+            broadcast_game_state()
+
+    # 2. Touch own flag (when it's not at home): return it
+    own_flag_pos = ctf_state["flag_pos"][my_team]
+    own_flag_holder = ctf_state["flag_holder"][my_team]
+    own_flag_home = ctf_state["flag_home"][my_team]
+    if own_flag_pos and own_flag_home and own_flag_holder is None:
+        is_at_home = (distance(own_flag_pos, own_flag_home) < 0.1)
+        if not is_at_home:
+            if distance(my_pos, [own_flag_pos[0], my_pos[1], own_flag_pos[2]]) < CTF_FLAG_CONTACT_DIST:
+                ctf_state["flag_pos"][my_team] = list(own_flag_home)
+                broadcast_game_state()
+
+    # 3. Carrier touching own flag home: capture!
+    carrying_enemy = (ctf_state["flag_holder"][enemy_team] == sid)
+    if carrying_enemy and own_flag_home:
+        if distance(my_pos, [own_flag_home[0], my_pos[1], own_flag_home[2]]) < CTF_FLAG_CONTACT_DIST:
+            ctf_state["scores"][my_team] += 1
+            # Reset both flags to home
+            for t in ("red", "blue"):
+                if ctf_state["flag_home"][t]:
+                    ctf_state["flag_pos"][t] = list(ctf_state["flag_home"][t])
+                ctf_state["flag_holder"][t] = None
+            broadcast_game_state()
+            return  # no point checking contacts after capture
+
+    # If carrier is moving, keep flag position synced to them
+    for t in ("red", "blue"):
+        if ctf_state["flag_holder"][t] == sid:
+            ctf_state["flag_pos"][t] = list(my_pos)
+
+    # Player-vs-player contacts -----
+    for other_sid, other in list(players.items()):
+        if other_sid == sid:
+            continue
+        other_team = ctf_state["teams"].get(other_sid)
+        if other_team not in ("red", "blue") or other_team == my_team:
+            continue  # teammates and spectators can't tag
+        if distance(my_pos, other["position"]) > CTF_CONTACT_DIST:
+            continue
+
+        # Who gets tagged?
+        i_carry_enemy = (ctf_state["flag_holder"][enemy_team] == sid)
+        they_carry_enemy = (ctf_state["flag_holder"][my_team] == other_sid)
+
+        other_home_sign = -1 if other_team == "blue" else 1
+        they_on_their_home = (other["position"][0] * other_home_sign) > 0
+
+        if i_carry_enemy and they_carry_enemy:
+            # Both carrying - both get tagged
+            tag_player(sid)
+            tag_player(other_sid)
+        elif i_carry_enemy:
+            tag_player(sid)
+        elif they_carry_enemy:
+            tag_player(other_sid)
+        elif not i_am_on_my_home and they_on_their_home:
+            tag_player(sid)
+        elif not they_on_their_home and i_am_on_my_home:
+            tag_player(other_sid)
+        # Both on their own home or both on enemy home: no tag
+        broadcast_game_state()
 
 
 @socketio.on("admin_ctf_place_flag")
