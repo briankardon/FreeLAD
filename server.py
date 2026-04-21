@@ -571,6 +571,50 @@ def on_admin_ctf_place_spawn(data):
     print(f"[ADMIN] Placed {side} spawn at {position}")
 
 
+@socketio.on("admin_ctf_start")
+def on_admin_ctf_start(data):
+    """Start the game: phase=playing, teleport all assigned players to spawn."""
+    sid = request.sid
+    if not is_admin(sid) or game_mode != "ctf":
+        return
+    # Require both spawns and both flags to be set
+    if not all(ctf_state["spawns"][t] for t in ("red", "blue")):
+        emit("admin_ctf_error", {"message": "Both spawns must be set before starting."})
+        return
+    if not all(ctf_state["flag_home"][t] for t in ("red", "blue")):
+        emit("admin_ctf_error", {"message": "Both flags must be placed before starting."})
+        return
+    ctf_state["phase"] = "playing"
+    ctf_state["scores"] = {"red": 0, "blue": 0}
+    # Reset flags to their home positions
+    for t in ("red", "blue"):
+        ctf_state["flag_pos"][t] = list(ctf_state["flag_home"][t])
+        ctf_state["flag_holder"][t] = None
+    # Teleport each assigned player to their team's spawn
+    for psid, team in ctf_state["teams"].items():
+        spawn = ctf_state["spawns"].get(team)
+        if spawn:
+            socketio.emit("teleport", {"position": list(spawn)}, to=psid)
+    broadcast_game_state()
+    print(f"[ADMIN] CTF game started")
+
+
+@socketio.on("admin_ctf_stop")
+def on_admin_ctf_stop(data):
+    """Stop the game: return to pregame."""
+    sid = request.sid
+    if not is_admin(sid) or game_mode != "ctf":
+        return
+    ctf_state["phase"] = "pregame"
+    # Return flags to home
+    for t in ("red", "blue"):
+        if ctf_state["flag_home"][t]:
+            ctf_state["flag_pos"][t] = list(ctf_state["flag_home"][t])
+        ctf_state["flag_holder"][t] = None
+    broadcast_game_state()
+    print(f"[ADMIN] CTF game stopped")
+
+
 if __name__ == "__main__":
     import sys
     port = int(sys.argv[1]) if len(sys.argv) > 1 else 5000

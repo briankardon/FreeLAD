@@ -504,6 +504,12 @@ function initAdminUI() {
     document.getElementById("admin-ctf-clear-btn").addEventListener("click", () => {
         socket.emit("admin_ctf_clear_teams", {});
     });
+    document.getElementById("admin-ctf-start-btn").addEventListener("click", () => {
+        socket.emit("admin_ctf_start", {});
+    });
+    document.getElementById("admin-ctf-stop-btn").addEventListener("click", () => {
+        socket.emit("admin_ctf_stop", {});
+    });
 
     // Prevent blocker click-through on admin panel inputs
     document.getElementById("admin-panel").addEventListener("click", (e) => e.stopPropagation());
@@ -539,6 +545,24 @@ function applyGameState(mode, ctf) {
     }
     const teamRow = document.getElementById("admin-ctf-team-row");
     if (teamRow) teamRow.style.display = ctfActive ? "" : "none";
+    const gameRow = document.getElementById("admin-ctf-game-row");
+    if (gameRow) gameRow.style.display = ctfActive ? "" : "none";
+    if (ctfActive) {
+        const phaseEl = document.getElementById("admin-ctf-phase");
+        if (phaseEl) phaseEl.textContent = `Phase: ${ctfState.phase}`;
+    }
+
+    // Scoreboard
+    const scoreboard = document.getElementById("scoreboard");
+    if (ctfActive) {
+        scoreboard.style.display = "";
+        document.getElementById("score-blue").textContent = ctfState.scores.blue;
+        document.getElementById("score-red").textContent = ctfState.scores.red;
+        document.getElementById("scoreboard-phase").textContent = ctfState.phase.toUpperCase();
+    } else {
+        scoreboard.style.display = "none";
+    }
+
     updateUploadVisibility(uploadEnabled);
     updateModeIndicators();
 }
@@ -1212,6 +1236,10 @@ function initNetwork() {
 
     socket.on("game_state", (data) => {
         applyGameState(data.mode || "sandbox", data.ctf || null);
+    });
+
+    socket.on("admin_ctf_error", (data) => {
+        alert(data.message);
     });
 
     socket.on("teleport", (data) => {

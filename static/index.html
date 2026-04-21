@@ -85,6 +85,11 @@
                         <button id="admin-ctf-randomize-btn">Randomize teams</button>
                         <button id="admin-ctf-clear-btn">All to spectator</button>
                     </div>
+                    <div class="admin-row" id="admin-ctf-game-row" style="display:none">
+                        <button id="admin-ctf-start-btn">Start game</button>
+                        <button id="admin-ctf-stop-btn">Stop game</button>
+                        <span id="admin-ctf-phase" class="dim"></span>
+                    </div>
                 </div>
             </div>
 
@@ -133,6 +138,11 @@
             <span id="clip-indicator" class="mode-off">CLIP</span>
             <span id="light-indicator" class="mode-off">LIGHT</span>
             <span id="transform-indicator" class="mode-off">---</span>
+        </div>
+        <div id="scoreboard" style="display:none">
+            <span class="scoreboard-team scoreboard-blue">BLUE <span id="score-blue">0</span></span>
+            <span class="scoreboard-phase" id="scoreboard-phase">PREGAME</span>
+            <span class="scoreboard-team scoreboard-red">RED <span id="score-red">0</span></span>
         </div>
         <div id="player-count">Players: 1</div>
 <div id="position-display"></div>

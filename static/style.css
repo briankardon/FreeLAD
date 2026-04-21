@@ -494,6 +494,45 @@ kbd {
     color: rgba(255, 255, 255, 0.3);
 }
 
+#scoreboard {
+    position: absolute;
+    top: 44px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 6px 14px;
+    background: rgba(0, 0, 0, 0.6);
+    border-radius: 6px;
+    font-weight: bold;
+    font-size: 14px;
+    letter-spacing: 1px;
+}
+
+.scoreboard-team {
+    padding: 2px 8px;
+    border-radius: 3px;
+    font-family: monospace;
+}
+
+.scoreboard-blue {
+    background: rgba(52, 152, 219, 0.8);
+    color: #fff;
+}
+
+.scoreboard-red {
+    background: rgba(231, 76, 60, 0.8);
+    color: #fff;
+}
+
+.scoreboard-phase {
+    color: #ffa726;
+    font-size: 11px;
+    font-weight: normal;
+    letter-spacing: 2px;
+}
+
 #player-count {
     position: absolute;
     top: 12px;
