@@ -534,6 +534,43 @@ def on_admin_ctf_clear_teams(data):
     broadcast_admin_state()
 
 
+def side_from_x(x):
+    """Return 'blue' for X < 0, 'red' for X > 0."""
+    return "blue" if x < 0 else "red"
+
+
+@socketio.on("admin_ctf_place_flag")
+def on_admin_ctf_place_flag(data):
+    """Place the flag home for whichever side the admin is standing on."""
+    sid = request.sid
+    if not is_admin(sid) or game_mode != "ctf":
+        return
+    position = data.get("position")
+    if not position or len(position) != 3:
+        return
+    side = side_from_x(position[0])
+    ctf_state["flag_home"][side] = list(position)
+    ctf_state["flag_pos"][side] = list(position)
+    ctf_state["flag_holder"][side] = None
+    broadcast_game_state()
+    print(f"[ADMIN] Placed {side} flag at {position}")
+
+
+@socketio.on("admin_ctf_place_spawn")
+def on_admin_ctf_place_spawn(data):
+    """Set the spawn position for whichever side the admin is standing on."""
+    sid = request.sid
+    if not is_admin(sid) or game_mode != "ctf":
+        return
+    position = data.get("position")
+    if not position or len(position) != 3:
+        return
+    side = side_from_x(position[0])
+    ctf_state["spawns"][side] = list(position)
+    broadcast_game_state()
+    print(f"[ADMIN] Placed {side} spawn at {position}")
+
+
 if __name__ == "__main__":
     import sys
     port = int(sys.argv[1]) if len(sys.argv) > 1 else 5000

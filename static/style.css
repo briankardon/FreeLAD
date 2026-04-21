@@ -422,6 +422,12 @@ canvas {
     color: #ccc;
 }
 
+.controls-help p.dim {
+    color: #666;
+    font-size: 11px;
+    font-style: italic;
+}
+
 kbd {
     display: inline-block;
     padding: 2px 6px;

@@ -33,6 +33,11 @@ let sandboxGround, ctfGroundBlue, ctfGroundRed;
 // Game state
 let gameMode = "sandbox";
 let ctfState = null;
+const ctfMarkers = {
+    // per-team visual markers for flag and spawn
+    red: { flag: null, flagHome: null, spawn: null },
+    blue: { flag: null, flagHome: null, spawn: null },
+};
 
 // Camera rotation (tracked as plain numbers to avoid Euler extraction instability)
 let cameraYaw = 0;
@@ -257,6 +262,22 @@ function onKeyDown(e) {
             flashlightOn = !flashlightOn;
             flashlight.visible = flashlightOn;
             updateModeIndicators();
+            break;
+
+        // --- Admin CTF placement keys (only active in CTF mode) ---
+        case "Digit1":
+            if (isAdmin && gameMode === "ctf") {
+                const p = camera.position.clone();
+                p.y -= EYE_HEIGHT;
+                socket.emit("admin_ctf_place_flag", { position: [p.x, p.y, p.z] });
+            }
+            break;
+        case "Digit2":
+            if (isAdmin && gameMode === "ctf") {
+                const p = camera.position.clone();
+                p.y -= EYE_HEIGHT;
+                socket.emit("admin_ctf_place_spawn", { position: [p.x, p.y, p.z] });
+            }
             break;
 
         // --- Drop selected model to ground ---
@@ -507,6 +528,8 @@ function applyGameState(mode, ctf) {
     ctfGroundRed.visible = ctfActive;
     // Update avatar colors (CTF overrides with team color)
     refreshAllRemoteColors();
+    // Update CTF flag and spawn markers
+    refreshCTFMarkers();
     // Sync admin panel radios
     const sandboxRadio = document.getElementById("admin-mode-sandbox");
     const ctfRadio = document.getElementById("admin-mode-ctf");
@@ -518,6 +541,125 @@ function applyGameState(mode, ctf) {
     if (teamRow) teamRow.style.display = ctfActive ? "" : "none";
     updateUploadVisibility(uploadEnabled);
     updateModeIndicators();
+}
+
+function buildFlagMesh(team) {
+    // Simple flag: pole + triangular cloth
+    const group = new THREE.Group();
+    const poleMat = new THREE.MeshStandardMaterial({ color: 0x555555 });
+    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 3.0, 8), poleMat);
+    pole.position.y = 1.5;
+    pole.castShadow = true;
+    group.add(pole);
+
+    const clothMat = new THREE.MeshStandardMaterial({
+        color: teamColor(team),
+        roughness: 0.7,
+        side: THREE.DoubleSide,
+    });
+    const cloth = new THREE.Mesh(new THREE.PlaneGeometry(0.9, 0.6), clothMat);
+    cloth.position.set(0.5, 2.6, 0);
+    cloth.castShadow = true;
+    group.add(cloth);
+
+    return group;
+}
+
+function buildFlagHomeMarker(team) {
+    // Translucent ring/disk showing the flag's home position when flag is picked up
+    const mat = new THREE.MeshBasicMaterial({
+        color: teamColor(team),
+        transparent: true,
+        opacity: 0.35,
+        side: THREE.DoubleSide,
+    });
+    const ring = new THREE.Mesh(new THREE.RingGeometry(0.8, 1.0, 32), mat);
+    ring.rotation.x = -Math.PI / 2;
+    ring.position.y = 0.02;
+    return ring;
+}
+
+function buildSpawnMarker(team) {
+    // Glowing ring + vertical beam to mark the spawn point
+    const group = new THREE.Group();
+    const ringMat = new THREE.MeshBasicMaterial({
+        color: teamColor(team),
+        transparent: true,
+        opacity: 0.6,
+        side: THREE.DoubleSide,
+    });
+    const ring = new THREE.Mesh(new THREE.RingGeometry(1.2, 1.5, 32), ringMat);
+    ring.rotation.x = -Math.PI / 2;
+    ring.position.y = 0.03;
+    group.add(ring);
+
+    const beamMat = new THREE.MeshBasicMaterial({
+        color: teamColor(team),
+        transparent: true,
+        opacity: 0.2,
+    });
+    const beam = new THREE.Mesh(new THREE.CylinderGeometry(1.3, 1.3, 15, 16, 1, true), beamMat);
+    beam.position.y = 7.5;
+    group.add(beam);
+
+    return group;
+}
+
+function disposeMarker(m) {
+    if (!m) return;
+    scene.remove(m);
+    m.traverse((child) => {
+        if (child.geometry) child.geometry.dispose();
+        if (child.material) child.material.dispose();
+    });
+}
+
+function refreshCTFMarkers() {
+    const ctfActive = (gameMode === "ctf") && ctfState;
+    for (const team of ["red", "blue"]) {
+        const markers = ctfMarkers[team];
+        // Flag marker
+        const flagPos = ctfActive ? ctfState.flag_pos[team] : null;
+        const flagHome = ctfActive ? ctfState.flag_home[team] : null;
+        const isHeld = ctfActive && ctfState.flag_holder[team];
+
+        if (flagPos && !isHeld) {
+            if (!markers.flag) {
+                markers.flag = buildFlagMesh(team);
+                scene.add(markers.flag);
+            }
+            markers.flag.position.fromArray(flagPos);
+        } else {
+            disposeMarker(markers.flag);
+            markers.flag = null;
+        }
+
+        // Flag home marker (shows when flag is elsewhere)
+        if (flagHome && (isHeld || (flagPos && (flagPos[0] !== flagHome[0] || flagPos[1] !== flagHome[1] || flagPos[2] !== flagHome[2])))) {
+            if (!markers.flagHome) {
+                markers.flagHome = buildFlagHomeMarker(team);
+                scene.add(markers.flagHome);
+            }
+            markers.flagHome.position.fromArray(flagHome);
+            markers.flagHome.position.y += 0.02;
+        } else {
+            disposeMarker(markers.flagHome);
+            markers.flagHome = null;
+        }
+
+        // Spawn marker
+        const spawnPos = ctfActive ? ctfState.spawns[team] : null;
+        if (spawnPos) {
+            if (!markers.spawn) {
+                markers.spawn = buildSpawnMarker(team);
+                scene.add(markers.spawn);
+            }
+            markers.spawn.position.fromArray(spawnPos);
+        } else {
+            disposeMarker(markers.spawn);
+            markers.spawn = null;
+        }
+    }
 }
 
 function teamColor(team) {
