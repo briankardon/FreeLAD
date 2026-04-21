@@ -526,15 +526,25 @@ function teamColor(team) {
     return null;
 }
 
+function applyRemoteDisplay(rp, playerId) {
+    const team = (gameMode === "ctf" && ctfState) ? ctfState.teams[playerId] : null;
+    const col = teamColor(team) || rp.originalColor;
+    // Spectators in CTF mode are semi-transparent to distinguish from players
+    const isSpectator = (gameMode === "ctf" && !team);
+    const opacity = isSpectator ? 0.35 : 1.0;
+    rp.group.children.forEach((child) => {
+        if (child.isMesh && child.material && child.material.color && !child.material.color.equals(new THREE.Color(0xffffff))) {
+            child.material.color.set(col);
+            child.material.transparent = isSpectator;
+            child.material.opacity = opacity;
+            child.material.needsUpdate = true;
+        }
+    });
+}
+
 function refreshAllRemoteColors() {
     for (const [id, rp] of remotePlayers) {
-        const team = (gameMode === "ctf" && ctfState) ? ctfState.teams[id] : null;
-        const col = teamColor(team) || rp.originalColor;
-        rp.group.children.forEach((child) => {
-            if (child.isMesh && child.material && child.material.color && !child.material.color.equals(new THREE.Color(0xffffff))) {
-                child.material.color.set(col);
-            }
-        });
+        applyRemoteDisplay(rp, id);
     }
 }
 
@@ -1143,26 +1153,16 @@ function addRemotePlayer(playerData) {
     }
 
     scene.add(group);
-    remotePlayers.set(playerData.id, {
+    const rp = {
         group,
         light: rpLight,
         lightTarget: rpLightTarget,
         targetPos: group.position.clone(),
         targetDir: new THREE.Vector3(0, 0, -1),
         originalColor: playerData.color,
-    });
-    // Apply team color if CTF is active
-    if (gameMode === "ctf" && ctfState) {
-        const team = ctfState.teams[playerData.id];
-        if (team) {
-            const col = teamColor(team);
-            group.children.forEach((child) => {
-                if (child.isMesh && child.material && child.material.color && !child.material.color.equals(new THREE.Color(0xffffff))) {
-                    child.material.color.set(col);
-                }
-            });
-        }
-    }
+    };
+    remotePlayers.set(playerData.id, rp);
+    applyRemoteDisplay(rp, playerData.id);
 }
 
 function removeRemotePlayer(playerId) {
@@ -1202,15 +1202,7 @@ function updateRemotePlayerColor(playerId, color) {
     const rp = remotePlayers.get(playerId);
     if (!rp) return;
     rp.originalColor = color;
-    // If CTF is active and player has a team, team color takes precedence
-    const team = (gameMode === "ctf" && ctfState) ? ctfState.teams[playerId] : null;
-    const displayColor = teamColor(team) || color;
-    const c = new THREE.Color(displayColor);
-    rp.group.children.forEach((child) => {
-        if (child.isMesh && child.material && !child.material.color.equals(new THREE.Color(0xffffff))) {
-            child.material.color.copy(c);
-        }
-    });
+    applyRemoteDisplay(rp, playerId);
 }
 
 function updateRemotePlayer(data) {
