@@ -528,6 +528,37 @@ def on_admin_delete_model(data):
         broadcast_admin_state()
 
 
+@socketio.on("admin_clear_scene")
+def on_admin_clear_scene(data):
+    """Delete all STLs and clear CTF map layout (flag homes + spawns)."""
+    sid = request.sid
+    if not is_admin(sid):
+        return
+    # Delete STL files and their metadata
+    for model_id, model in list(stl_models.items()):
+        filepath = os.path.join(STL_DIR, model["filename"])
+        if os.path.exists(filepath):
+            os.remove(filepath)
+        mp = meta_path(model["filename"])
+        if os.path.exists(mp):
+            os.remove(mp)
+    stl_models.clear()
+
+    # Clear CTF map layout
+    ctf_state["flag_home"] = {"red": None, "blue": None}
+    ctf_state["spawns"]    = {"red": None, "blue": None}
+    ctf_state["flag_pos"]  = {"red": None, "blue": None}
+    ctf_state["flag_holder"] = {"red": None, "blue": None}
+    if os.path.exists(CTF_MAP_FILE):
+        os.remove(CTF_MAP_FILE)
+
+    # Broadcast refresh
+    socketio.emit("scene_reloaded", {"models": []})
+    broadcast_game_state()
+    broadcast_admin_state()
+    print(f"[ADMIN] Scene cleared")
+
+
 @socketio.on("admin_toggle_editing")
 def on_admin_toggle_editing(data):
     sid = request.sid

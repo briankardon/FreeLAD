@@ -496,6 +496,12 @@ function initAdminUI() {
         document.getElementById("admin-load-scene-input").click();
     });
 
+    document.getElementById("admin-clear-scene-btn").addEventListener("click", () => {
+        if (confirm("Clear the entire scene? This will delete all STL models AND clear CTF flag/spawn placements. This cannot be undone.")) {
+            socket.emit("admin_clear_scene", {});
+        }
+    });
+
     document.getElementById("admin-load-scene-input").addEventListener("change", async (e) => {
         const file = e.target.files[0];
         if (!file) return;
