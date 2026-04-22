@@ -1019,6 +1019,9 @@ function resolveCollisions(currentPos, newPos) {
 function loadSTLModel(modelInfo) {
     stlLoader.load(`/stl_files/${modelInfo.filename}`, (geometry) => {
         geometry.computeVertexNormals();
+        // Always center the geometry so bbox center is at origin. Saved positions
+        // (from autoLift or later transforms) are all relative to centered geometry.
+        geometry.center();
 
         const material = new THREE.MeshStandardMaterial({
             color: modelInfo.color || "#aaaacc",
@@ -1039,8 +1042,7 @@ function loadSTLModel(modelInfo) {
         // On fresh import: center geometry so the model appears at the player,
         // then lift so the bottom sits at ground level
         if (modelInfo.autoLift) {
-            geometry.center(); // shifts geometry so bounding box center is at origin
-            // Convert FreeCAD Z-up convention to Three.js Y-up (matches ArrowDown in rotate mode)
+            // Geometry is already centered above. Apply FreeCAD Z-up → Y-up rotation.
             mesh.rotation.x = -Math.PI / 2;
 
             // Compute world-space bounding box (accounts for rotation and scale)
