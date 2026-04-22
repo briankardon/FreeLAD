@@ -377,6 +377,15 @@ canvas {
     accent-color: #ffa726;
 }
 
+.slider-val {
+    width: 36px;
+    flex-shrink: 0;
+    text-align: right;
+    color: #ffa726;
+    font-family: monospace;
+    font-size: 11px;
+}
+
 .light-row input[type="color"] {
     width: 28px;
     height: 28px;

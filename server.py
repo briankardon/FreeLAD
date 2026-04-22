@@ -27,6 +27,8 @@ admin_settings = {
     "editing_enabled": True,   # whether non-admin clients can edit/delete models
     "upload_enabled": True,    # whether non-admin clients can upload models
     "max_bbox": 0,             # max bounding box dimension for uploads (0 = unlimited)
+    "movement_mult": 1.0,      # scales all player movement speeds
+    "jump_mult": 1.0,          # scales jump height
 }
 
 # Game mode state: "sandbox" (default) or "ctf"
@@ -281,6 +283,8 @@ def on_connect():
         "editing_enabled": admin_settings["editing_enabled"],
         "upload_enabled": admin_settings["upload_enabled"],
         "lighting": admin_settings.get("lighting"),
+        "movement_mult": admin_settings["movement_mult"],
+        "jump_mult": admin_settings["jump_mult"],
         "game_mode": game_mode,
         "ctf": ctf_public_state() if game_mode == "ctf" else None,
     })
@@ -464,6 +468,22 @@ def on_admin_set_lighting(data):
         return
     admin_settings["lighting"] = data
     socketio.emit("lighting_changed", data)
+
+
+@socketio.on("admin_set_movement")
+def on_admin_set_movement(data):
+    sid = request.sid
+    if not is_admin(sid):
+        return
+    try:
+        admin_settings["movement_mult"] = max(0.1, min(10.0, float(data.get("movement_mult", 1.0))))
+        admin_settings["jump_mult"]     = max(0.1, min(10.0, float(data.get("jump_mult", 1.0))))
+    except (TypeError, ValueError):
+        return
+    socketio.emit("movement_changed", {
+        "movement_mult": admin_settings["movement_mult"],
+        "jump_mult": admin_settings["jump_mult"],
+    })
 
 
 # --- CTF Game Mode Events ---

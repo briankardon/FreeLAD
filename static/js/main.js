@@ -63,6 +63,8 @@ let transformMode = null; // null, "translate", "rotate", "scale"
 let isAdmin = false;
 let editingEnabled = true;
 let uploadEnabled = true;
+let movementMult = 1.0;
+let jumpMult = 1.0;
 
 // Multiplayer state
 let socket;
@@ -238,7 +240,7 @@ function onKeyDown(e) {
             if (flyMode) {
                 moveState.up = true;
             } else if (onGround) {
-                velocity.y = JUMP_SPEED;
+                velocity.y = JUMP_SPEED * jumpMult;
                 onGround = false;
             }
             break;
@@ -491,6 +493,20 @@ function initAdminUI() {
         }
     }
 
+    // Movement / jump multiplier sliders
+    const moveSlider = document.getElementById("admin-movement-mult");
+    const jumpSlider = document.getElementById("admin-jump-mult");
+    const sendMovement = () => {
+        document.getElementById("admin-movement-val").textContent = parseFloat(moveSlider.value).toFixed(1) + "×";
+        document.getElementById("admin-jump-val").textContent     = parseFloat(jumpSlider.value).toFixed(1) + "×";
+        socket.emit("admin_set_movement", {
+            movement_mult: parseFloat(moveSlider.value),
+            jump_mult: parseFloat(jumpSlider.value),
+        });
+    };
+    moveSlider.addEventListener("input", sendMovement);
+    jumpSlider.addEventListener("input", sendMovement);
+
     // Game mode radios
     document.getElementById("admin-mode-sandbox").addEventListener("change", (e) => {
         if (e.target.checked) socket.emit("admin_set_mode", { mode: "sandbox" });
@@ -720,6 +736,19 @@ function refreshAllRemoteColors() {
     }
 }
 
+function applyMovementSettings(mv, jp) {
+    movementMult = mv;
+    jumpMult = jp;
+    const moveSlider = document.getElementById("admin-movement-mult");
+    const jumpSlider = document.getElementById("admin-jump-mult");
+    const moveVal = document.getElementById("admin-movement-val");
+    const jumpVal = document.getElementById("admin-jump-val");
+    if (moveSlider) moveSlider.value = mv;
+    if (jumpSlider) jumpSlider.value = jp;
+    if (moveVal) moveVal.textContent = mv.toFixed(1) + "×";
+    if (jumpVal) jumpVal.textContent = jp.toFixed(1) + "×";
+}
+
 function applyLighting(data) {
     if (data.ambient) {
         ambientLight.intensity = data.ambient.intensity;
@@ -818,9 +847,10 @@ function updateAdminPanel(data) {
 function updatePlayer(delta) {
     if (!controls.isLocked) return;
 
-    const speed = flyMode
+    const baseSpeed = flyMode
         ? (sprinting ? FLY_SPRINT_SPEED : FLY_SPEED)
         : (sprinting ? SPRINT_SPEED : WALK_SPEED);
+    const speed = baseSpeed * movementMult;
 
     const direction = new THREE.Vector3();
     if (moveState.forward) direction.z += 1;
@@ -1137,6 +1167,7 @@ function initNetwork() {
         uploadEnabled = data.upload_enabled;
         updateUploadVisibility(uploadEnabled);
         if (data.lighting) applyLighting(data.lighting);
+        applyMovementSettings(data.movement_mult ?? 1.0, data.jump_mult ?? 1.0);
         applyGameState(data.game_mode || "sandbox", data.ctf || null);
         updateModeIndicators();
         updatePlayerCount();
@@ -1238,6 +1269,10 @@ function initNetwork() {
 
     socket.on("lighting_changed", (data) => {
         applyLighting(data);
+    });
+
+    socket.on("movement_changed", (data) => {
+        applyMovementSettings(data.movement_mult, data.jump_mult);
     });
 
     socket.on("game_state", (data) => {
