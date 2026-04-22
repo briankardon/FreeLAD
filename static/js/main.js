@@ -999,10 +999,12 @@ function loadSTLModel(modelInfo) {
         // then lift so the bottom sits at ground level
         if (modelInfo.autoLift) {
             geometry.center(); // shifts geometry so bounding box center is at origin
-            geometry.computeBoundingBox();
-            const bb = geometry.boundingBox.clone();
-            bb.min.multiply(mesh.scale);
-            bb.max.multiply(mesh.scale);
+            // Convert FreeCAD Z-up convention to Three.js Y-up (matches ArrowDown in rotate mode)
+            mesh.rotation.x = -Math.PI / 2;
+
+            // Compute world-space bounding box (accounts for rotation and scale)
+            mesh.updateMatrixWorld(true);
+            let bb = new THREE.Box3().setFromObject(mesh);
 
             // Enforce max bounding box size if set
             const maxBbox = modelInfo.maxBbox || 0;
@@ -1013,17 +1015,19 @@ function loadSTLModel(modelInfo) {
                 if (maxDim > maxBbox) {
                     const clampFactor = maxBbox / maxDim;
                     mesh.scale.multiplyScalar(clampFactor);
-                    bb.min.multiplyScalar(clampFactor);
-                    bb.max.multiplyScalar(clampFactor);
+                    mesh.updateMatrixWorld(true);
+                    bb = new THREE.Box3().setFromObject(mesh);
                 }
             }
 
             if (bb.min.y < 0) {
                 mesh.position.y -= bb.min.y;
+                bb.max.y -= bb.min.y;
+                bb.min.y = 0;
             }
             // Place the uploading player on top of the model
             if (modelInfo.uploader === myId) {
-                camera.position.y = mesh.position.y + bb.max.y + EYE_HEIGHT;
+                camera.position.y = bb.max.y + EYE_HEIGHT;
                 velocity.y = 0;
                 onGround = false;
             }
