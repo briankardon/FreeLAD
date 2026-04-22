@@ -7,6 +7,7 @@ import os
 import uuid
 import json
 import io
+import time
 import zipfile
 from datetime import datetime
 from flask import Flask, send_from_directory, request, jsonify, send_file
@@ -24,6 +25,10 @@ socketio = SocketIO(
 )
 
 STL_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "stl_files")
+
+# Admin password is read from env or set later from CLI args in __main__.
+# Module-scope default so WSGI deployments (without __main__) still work.
+ADMIN_PASSWORD = os.environ.get("FREELAD_ADMIN_PASSWORD", "admin")
 os.makedirs(STL_DIR, exist_ok=True)
 
 # World state
@@ -90,8 +95,11 @@ def save_meta(model):
         "scale": model["scale"],
         "color": model.get("color", "#aaaacc"),
     }
-    with open(meta_path(model["filename"]), "w") as f:
-        json.dump(data, f, indent=2)
+    try:
+        with open(meta_path(model["filename"]), "w") as f:
+            json.dump(data, f, indent=2)
+    except OSError as ex:
+        print(f"[!] Failed to save metadata for {model['filename']}: {ex}")
 
 
 def load_meta(stl_filename):
@@ -346,19 +354,36 @@ def admin_load_scene():
 
     # Validate contents before wiping anything
     for name in zf.namelist():
-        if name.endswith("/") or ".." in name or name.startswith("/"):
+        if name.endswith("/") or ".." in name or name.startswith("/") or os.path.isabs(name):
             return jsonify({"error": f"Invalid path in zip: {name}"}), 400
         if not (name.lower().endswith(".stl") or name.lower().endswith(".json")):
             return jsonify({"error": f"Only .stl and .json files allowed in zip: {name}"}), 400
 
-    # Clear current stl_files directory
+    # Atomic-ish swap: extract to a temp directory first so an extraction failure
+    # doesn't leave us with a half-wiped scene.
+    tmp_dir = os.path.join(STL_DIR, f".tmp_load_{uuid.uuid4().hex}")
+    os.makedirs(tmp_dir, exist_ok=True)
+    try:
+        zf.extractall(tmp_dir)
+    except Exception as ex:
+        for fn in os.listdir(tmp_dir):
+            try: os.remove(os.path.join(tmp_dir, fn))
+            except OSError: pass
+        try: os.rmdir(tmp_dir)
+        except OSError: pass
+        return jsonify({"error": f"Failed to extract zip: {ex}"}), 500
+
+    # Extraction succeeded - wipe current scene and move extracted files in
     for filename in os.listdir(STL_DIR):
+        if filename.startswith(".tmp_load_"):
+            continue
         filepath = os.path.join(STL_DIR, filename)
         if os.path.isfile(filepath):
             os.remove(filepath)
-
-    # Extract all zip members into STL_DIR
-    zf.extractall(STL_DIR)
+    for filename in os.listdir(tmp_dir):
+        os.replace(os.path.join(tmp_dir, filename), os.path.join(STL_DIR, filename))
+    try: os.rmdir(tmp_dir)
+    except OSError: pass
 
     # Rebuild in-memory model list
     stl_models.clear()
@@ -386,14 +411,13 @@ def admin_load_scene():
 def on_connect():
     sid = request.sid
     color = next_color()
-    import time as _time
     players[sid] = {
         "id": sid,
         "name": f"Player-{sid[:6]}",
         "position": [0, 1.0, 0],
         "rotation": [0, 0, 0],
         "color": color,
-        "last_seen_ts": _time.time(),
+        "last_seen_ts": time.time(),
     }
 
     # Send the new player their info and current world state
@@ -423,6 +447,7 @@ def on_disconnect():
     sid = request.sid
     if sid in players:
         print(f"[-] {players[sid]['name']} disconnected ({sid})")
+        clean_ctf_state_for_player(sid)
         del players[sid]
         admin_sids.discard(sid)
         emit("player_left", {"id": sid}, broadcast=True)
@@ -433,8 +458,7 @@ def on_disconnect():
 def on_heartbeat(data):
     sid = request.sid
     if sid in players:
-        import time as _time
-        players[sid]["last_seen_ts"] = _time.time()
+        players[sid]["last_seen_ts"] = time.time()
 
 
 @socketio.on("set_name")
@@ -462,8 +486,7 @@ def on_set_color(data):
 def on_player_update(data):
     sid = request.sid
     if sid in players:
-        import time as _time
-        players[sid]["last_seen_ts"] = _time.time()
+        players[sid]["last_seen_ts"] = time.time()
         players[sid]["position"] = data.get("position", players[sid]["position"])
         players[sid]["rotation"] = data.get("rotation", players[sid]["rotation"])
         players[sid]["flashlight"] = data.get("flashlight", False)
@@ -764,6 +787,27 @@ def distance(a, b):
     return ((a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2 + (a[2] - b[2]) ** 2) ** 0.5
 
 
+def clean_ctf_state_for_player(sid):
+    """Remove a player from all CTF state: drop any held flag to home, clear team assignment.
+    Call when a player disconnects or is evicted so we don't leave dangling references."""
+    if game_mode != "ctf":
+        return
+    changed = False
+    # Drop any flag the player was carrying back at home (they're gone, no meaningful drop location)
+    for team in ("red", "blue"):
+        if ctf_state["flag_holder"][team] == sid:
+            ctf_state["flag_holder"][team] = None
+            if ctf_state["flag_home"][team]:
+                ctf_state["flag_pos"][team] = list(ctf_state["flag_home"][team])
+            changed = True
+    # Remove team assignment
+    if sid in ctf_state["teams"]:
+        del ctf_state["teams"][sid]
+        changed = True
+    if changed:
+        broadcast_game_state()
+
+
 def tag_player(sid, tagger_sid=None):
     """Handle a player being tagged: drop any held flag at current position, teleport to spawn."""
     if sid not in players:
@@ -847,6 +891,7 @@ def process_ctf_contacts(sid):
             ctf_state["flag_pos"][t] = list(my_pos)
 
     # Player-vs-player contacts -----
+    tagged_anyone = False
     for other_sid, other in list(players.items()):
         if other_sid == sid:
             continue
@@ -867,15 +912,21 @@ def process_ctf_contacts(sid):
             # Both carrying - both get tagged (they tagged each other)
             tag_player(sid, tagger_sid=other_sid)
             tag_player(other_sid, tagger_sid=sid)
+            tagged_anyone = True
         elif i_carry_enemy:
             tag_player(sid, tagger_sid=other_sid)
+            tagged_anyone = True
         elif they_carry_enemy:
             tag_player(other_sid, tagger_sid=sid)
+            tagged_anyone = True
         elif not i_am_on_my_home and they_on_their_home:
             tag_player(sid, tagger_sid=other_sid)
+            tagged_anyone = True
         elif not they_on_their_home and i_am_on_my_home:
             tag_player(other_sid, tagger_sid=sid)
+            tagged_anyone = True
         # Both on their own home or both on enemy home: no tag
+    if tagged_anyone:
         broadcast_game_state()
 
 
@@ -926,9 +977,8 @@ def on_admin_ctf_start(data):
     if not all(ctf_state["flag_home"][t] for t in ("red", "blue")):
         emit("admin_ctf_error", {"message": "Both flags must be placed before starting."})
         return
-    import time as _time
     ctf_state["phase"] = "countdown"
-    ctf_state["countdown_end_ts"] = _time.time() + 5
+    ctf_state["countdown_end_ts"] = time.time() + 5
     ctf_state["scores"] = {"red": 0, "blue": 0}
     # Reset flags to their home positions
     for t in ("red", "blue"):
@@ -979,14 +1029,14 @@ def cleanup_stale_players():
     """Periodically remove players whose connections appear dead (no updates or
     heartbeats in STALE_PLAYER_TIMEOUT seconds). Belt-and-suspenders: Socket.IO's
     ping/pong should normally detect tab-close, but this catches stragglers."""
-    import time as _time
     while True:
         socketio.sleep(CLEANUP_INTERVAL)
-        now = _time.time()
+        now = time.time()
         stale = [sid for sid, p in players.items()
                  if (now - p.get("last_seen_ts", now)) > STALE_PLAYER_TIMEOUT]
         for sid in stale:
             print(f"[-] {players[sid]['name']} evicted (stale for {now - players[sid]['last_seen_ts']:.0f}s)")
+            clean_ctf_state_for_player(sid)
             del players[sid]
             admin_sids.discard(sid)
             socketio.emit("player_left", {"id": sid})
@@ -997,7 +1047,8 @@ def cleanup_stale_players():
 if __name__ == "__main__":
     import sys
     port = int(sys.argv[1]) if len(sys.argv) > 1 else 5000
-    ADMIN_PASSWORD = sys.argv[2] if len(sys.argv) > 2 else "admin"
+    if len(sys.argv) > 2:
+        ADMIN_PASSWORD = sys.argv[2]
     print(f"FreeLAD server starting on http://0.0.0.0:{port}")
     print(f"Admin password: {ADMIN_PASSWORD}")
     print(f"STL directory: {STL_DIR}")
