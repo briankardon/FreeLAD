@@ -808,8 +808,9 @@ def clean_ctf_state_for_player(sid):
         broadcast_game_state()
 
 
-def tag_player(sid, tagger_sid=None):
-    """Handle a player being tagged: drop any held flag at current position, teleport to spawn."""
+def tag_player(sid):
+    """Handle a player being tagged: drop any held flag at current position, teleport to spawn.
+    Does NOT emit a player_tagged event - the caller is responsible for that per-collision."""
     if sid not in players:
         return
     # If carrying a flag, drop it at current position (ground level)
@@ -820,8 +821,6 @@ def tag_player(sid, tagger_sid=None):
             ctf_state["flag_pos"][team] = [pos[0], max(0, pos[1] - 1.6), pos[2]]
             ctf_state["flag_holder"][team] = None
             socketio.emit("ctf_event", {"type": "flag_drop", "actor": sid, "team": team})
-    # Notify everyone of the tag
-    socketio.emit("ctf_event", {"type": "player_tagged", "target": sid, "actor": tagger_sid})
     # Teleport to own spawn
     team = ctf_state["teams"].get(sid)
     if team and ctf_state["spawns"].get(team):
@@ -890,7 +889,9 @@ def process_ctf_contacts(sid):
         if ctf_state["flag_holder"][t] == sid:
             ctf_state["flag_pos"][t] = list(my_pos)
 
-    # Player-vs-player contacts -----
+    # Player-vs-player contacts - mutual annihilation:
+    # when two opposing players collide, both go back to their spawns, unless
+    # both are safely on their own home territory (no tag).
     tagged_anyone = False
     for other_sid, other in list(players.items()):
         if other_sid == sid:
@@ -901,31 +902,34 @@ def process_ctf_contacts(sid):
         if distance(my_pos, other["position"]) > CTF_CONTACT_DIST:
             continue
 
-        # Who gets tagged?
         i_carry_enemy = (ctf_state["flag_holder"][enemy_team] == sid)
         they_carry_enemy = (ctf_state["flag_holder"][my_team] == other_sid)
-
         other_home_sign = -1 if other_team == "blue" else 1
         they_on_their_home = (other["position"][0] * other_home_sign) > 0
 
-        if i_carry_enemy and they_carry_enemy:
-            # Both carrying - both get tagged (they tagged each other)
-            tag_player(sid, tagger_sid=other_sid)
-            tag_player(other_sid, tagger_sid=sid)
-            tagged_anyone = True
-        elif i_carry_enemy:
-            tag_player(sid, tagger_sid=other_sid)
-            tagged_anyone = True
-        elif they_carry_enemy:
-            tag_player(other_sid, tagger_sid=sid)
-            tagged_anyone = True
-        elif not i_am_on_my_home and they_on_their_home:
-            tag_player(sid, tagger_sid=other_sid)
-            tagged_anyone = True
-        elif not they_on_their_home and i_am_on_my_home:
-            tag_player(other_sid, tagger_sid=sid)
-            tagged_anyone = True
-        # Both on their own home or both on enemy home: no tag
+        # Safe pair: both are on their own home side AND neither carries the enemy flag
+        any_flag = i_carry_enemy or they_carry_enemy
+        if not any_flag and i_am_on_my_home and they_on_their_home:
+            continue  # both in their own territory, no tag
+
+        # Determine "tagger" vs "target" for the event log entry
+        # (Mutual annihilation still, but one message per collision.)
+        if i_carry_enemy and not they_carry_enemy:
+            tagger, target = other_sid, sid
+        elif they_carry_enemy and not i_carry_enemy:
+            tagger, target = sid, other_sid
+        elif i_am_on_my_home and not they_on_their_home:
+            tagger, target = sid, other_sid
+        elif they_on_their_home and not i_am_on_my_home:
+            tagger, target = other_sid, sid
+        else:
+            # Both carrying flags, or both on enemy territory, or other edge case
+            tagger, target = sid, other_sid
+
+        tag_player(sid)
+        tag_player(other_sid)
+        socketio.emit("ctf_event", {"type": "player_tagged", "target": target, "actor": tagger})
+        tagged_anyone = True
     if tagged_anyone:
         broadcast_game_state()
 
