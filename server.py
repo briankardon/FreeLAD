@@ -15,7 +15,13 @@ from flask_socketio import SocketIO, emit
 app = Flask(__name__, static_folder="static")
 app.config["SECRET_KEY"] = "freelad-dev"
 
-socketio = SocketIO(app, cors_allowed_origins="*", max_http_buffer_size=50 * 1024 * 1024)
+socketio = SocketIO(
+    app,
+    cors_allowed_origins="*",
+    max_http_buffer_size=50 * 1024 * 1024,
+    ping_interval=5,   # Ping every 5s (default 25)
+    ping_timeout=10,   # Disconnect if no pong in 10s (default 20)
+)
 
 STL_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "stl_files")
 os.makedirs(STL_DIR, exist_ok=True)
@@ -380,12 +386,14 @@ def admin_load_scene():
 def on_connect():
     sid = request.sid
     color = next_color()
+    import time as _time
     players[sid] = {
         "id": sid,
         "name": f"Player-{sid[:6]}",
         "position": [0, 1.0, 0],
         "rotation": [0, 0, 0],
         "color": color,
+        "last_seen_ts": _time.time(),
     }
 
     # Send the new player their info and current world state
@@ -421,6 +429,14 @@ def on_disconnect():
         broadcast_admin_state()
 
 
+@socketio.on("heartbeat")
+def on_heartbeat(data):
+    sid = request.sid
+    if sid in players:
+        import time as _time
+        players[sid]["last_seen_ts"] = _time.time()
+
+
 @socketio.on("set_name")
 def on_set_name(data):
     sid = request.sid
@@ -446,6 +462,8 @@ def on_set_color(data):
 def on_player_update(data):
     sid = request.sid
     if sid in players:
+        import time as _time
+        players[sid]["last_seen_ts"] = _time.time()
         players[sid]["position"] = data.get("position", players[sid]["position"])
         players[sid]["rotation"] = data.get("rotation", players[sid]["rotation"])
         players[sid]["flashlight"] = data.get("flashlight", False)
@@ -947,6 +965,29 @@ def on_admin_ctf_stop(data):
     print(f"[ADMIN] CTF game stopped")
 
 
+STALE_PLAYER_TIMEOUT = 30   # seconds without heartbeat/update before eviction
+CLEANUP_INTERVAL      = 10  # seconds between cleanup passes
+
+
+def cleanup_stale_players():
+    """Periodically remove players whose connections appear dead (no updates or
+    heartbeats in STALE_PLAYER_TIMEOUT seconds). Belt-and-suspenders: Socket.IO's
+    ping/pong should normally detect tab-close, but this catches stragglers."""
+    import time as _time
+    while True:
+        socketio.sleep(CLEANUP_INTERVAL)
+        now = _time.time()
+        stale = [sid for sid, p in players.items()
+                 if (now - p.get("last_seen_ts", now)) > STALE_PLAYER_TIMEOUT]
+        for sid in stale:
+            print(f"[-] {players[sid]['name']} evicted (stale for {now - players[sid]['last_seen_ts']:.0f}s)")
+            del players[sid]
+            admin_sids.discard(sid)
+            socketio.emit("player_left", {"id": sid})
+        if stale:
+            broadcast_admin_state()
+
+
 if __name__ == "__main__":
     import sys
     port = int(sys.argv[1]) if len(sys.argv) > 1 else 5000
@@ -955,4 +996,5 @@ if __name__ == "__main__":
     print(f"Admin password: {ADMIN_PASSWORD}")
     print(f"STL directory: {STL_DIR}")
     print(f"Pre-loaded {len(stl_models)} STL model(s)")
+    socketio.start_background_task(cleanup_stale_players)
     socketio.run(app, host="0.0.0.0", port=port, debug=True)

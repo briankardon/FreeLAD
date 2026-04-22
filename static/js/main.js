@@ -1348,6 +1348,12 @@ async function onSTLUpload(e) {
 function initNetwork() {
     socket = io();
 
+    // Heartbeat: lets the server know we're still alive even when our rAF
+    // loop is throttled (backgrounded tab). Fires every 5 seconds.
+    setInterval(() => {
+        if (socket && socket.connected) socket.emit("heartbeat", {});
+    }, 5000);
+
     socket.on("welcome", (data) => {
         myId = data.you.id;
         console.log("Connected as", data.you.name, "color:", data.you.color);
