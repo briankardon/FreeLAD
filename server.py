@@ -778,13 +778,17 @@ def process_ctf_contacts(sid):
     my_home_side_sign = -1 if my_team == "blue" else 1
     i_am_on_my_home = (my_pos[0] * my_home_side_sign) > 0
 
+    # Use player's feet position for flag contact checks (my_pos is camera/eye level)
+    EYE_HEIGHT = 1.6
+    my_feet = [my_pos[0], my_pos[1] - EYE_HEIGHT, my_pos[2]]
+
     # Flag interactions -----
     # 1. Touch enemy flag (not held by anyone): pick it up
     enemy_flag_pos = ctf_state["flag_pos"][enemy_team]
     enemy_flag_holder = ctf_state["flag_holder"][enemy_team]
     if enemy_flag_pos and enemy_flag_holder is None:
-        # Check distance; flag is on ground so compare X,Z primarily
-        if distance(my_pos, [enemy_flag_pos[0], my_pos[1], enemy_flag_pos[2]]) < CTF_FLAG_CONTACT_DIST:
+        # Full 3D distance from feet to flag base
+        if distance(my_feet, enemy_flag_pos) < CTF_FLAG_CONTACT_DIST:
             ctf_state["flag_holder"][enemy_team] = sid
             ctf_state["flag_pos"][enemy_team] = list(my_pos)
             broadcast_game_state()
@@ -796,14 +800,14 @@ def process_ctf_contacts(sid):
     if own_flag_pos and own_flag_home and own_flag_holder is None:
         is_at_home = (distance(own_flag_pos, own_flag_home) < 0.1)
         if not is_at_home:
-            if distance(my_pos, [own_flag_pos[0], my_pos[1], own_flag_pos[2]]) < CTF_FLAG_CONTACT_DIST:
+            if distance(my_feet, own_flag_pos) < CTF_FLAG_CONTACT_DIST:
                 ctf_state["flag_pos"][my_team] = list(own_flag_home)
                 broadcast_game_state()
 
     # 3. Carrier touching own flag home: capture!
     carrying_enemy = (ctf_state["flag_holder"][enemy_team] == sid)
     if carrying_enemy and own_flag_home:
-        if distance(my_pos, [own_flag_home[0], my_pos[1], own_flag_home[2]]) < CTF_FLAG_CONTACT_DIST:
+        if distance(my_feet, own_flag_home) < CTF_FLAG_CONTACT_DIST:
             ctf_state["scores"][my_team] += 1
             # Reset both flags to home
             for t in ("red", "blue"):
