@@ -143,9 +143,9 @@ function init() {
     ctfGroundRed.visible = false;
     scene.add(ctfGroundRed);
 
-    // Grid for orientation
+    // Grid for orientation - raised slightly above ground to avoid z-fighting flicker
     const grid = new THREE.GridHelper(200, 200, 0x888888, 0x444444);
-    grid.position.y = 0.01;
+    grid.position.y = 0.05;
     scene.add(grid);
 
     // Player flashlight (headlamp) - attached to camera so it follows look direction
