@@ -1054,12 +1054,11 @@ function updateAdminPanel(data) {
             // Team assignment buttons
             const btnGroup = document.createElement("span");
             btnGroup.className = "team-btn-group";
-            for (const [label, team, bg] of [["R", "red", "#e74c3c"], ["B", "blue", "#3498db"], ["S", null, "#888"]]) {
+            for (const [label, team, teamClass] of [["R", "red", "team-red"], ["B", "blue", "team-blue"], ["S", null, "team-gray"]]) {
                 const btn = document.createElement("button");
                 btn.textContent = label;
-                btn.className = "team-btn" + (player.team === team ? " active" : "");
-                btn.style.borderColor = bg;
-                if (player.team === team) btn.style.background = bg;
+                btn.className = "team-btn " + teamClass + (player.team === team ? " active" : "");
+                btn.title = team ? `Assign to ${team}` : "Set as spectator";
                 btn.addEventListener("click", (e) => {
                     e.stopPropagation();
                     socket.emit("admin_ctf_assign", { sid: player.id, team });

@@ -316,18 +316,41 @@ canvas {
 }
 
 .team-btn {
-    padding: 1px 6px !important;
-    font-size: 10px !important;
+    padding: 2px 9px !important;
+    font-size: 11px !important;
+    font-weight: bold;
     border: 1px solid #666 !important;
     border-radius: 3px !important;
-    background: rgba(255, 255, 255, 0.08) !important;
-    color: #ccc !important;
+    background: rgba(255, 255, 255, 0.05) !important;
+    color: #666 !important;
     cursor: pointer;
     margin-left: 0 !important;
+    min-width: 22px;
 }
 
-.team-btn.active {
+/* Team-specific hover states show the color even when not active */
+.team-btn.team-red:hover    { background: rgba(231, 76, 60, 0.25) !important; color: #f1948a !important; }
+.team-btn.team-blue:hover   { background: rgba(52, 152, 219, 0.25) !important; color: #85c1e9 !important; }
+.team-btn.team-gray:hover   { background: rgba(200, 200, 200, 0.2) !important; color: #ccc !important; }
+
+/* Active state: strong filled background with colored outline */
+.team-btn.active.team-red {
+    background: #e74c3c !important;
     color: #fff !important;
+    border-color: #ffb0b0 !important;
+    box-shadow: 0 0 0 1px #ffb0b0;
+}
+.team-btn.active.team-blue {
+    background: #3498db !important;
+    color: #fff !important;
+    border-color: #b0d8ff !important;
+    box-shadow: 0 0 0 1px #b0d8ff;
+}
+.team-btn.active.team-gray {
+    background: #888 !important;
+    color: #fff !important;
+    border-color: #ddd !important;
+    box-shadow: 0 0 0 1px #ddd;
 }
 
 #admin-ctf-randomize-btn,
