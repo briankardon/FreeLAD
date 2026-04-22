@@ -256,9 +256,8 @@ function onKeyDown(e) {
             }
             break;
         case "ShiftLeft": case "ShiftRight":
-            sprinting = true; break;
-        case "ControlLeft": case "ControlRight":
             if (flyMode) moveState.down = true;
+            else sprinting = true;
             break;
 
         // --- Mode toggles ---
@@ -339,9 +338,9 @@ function onKeyUp(e) {
         case "KeyD": moveState.right = false; break;
         case "Space": moveState.up = false; break;
         case "ShiftLeft": case "ShiftRight":
-            sprinting = false; break;
-        case "ControlLeft": case "ControlRight":
-            moveState.down = false; break;
+            sprinting = false;
+            moveState.down = false;
+            break;
     }
 }
 
