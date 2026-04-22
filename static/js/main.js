@@ -211,6 +211,17 @@ function init() {
     document.addEventListener("keyup", onKeyUp);
     document.addEventListener("mousedown", onMouseDown);
 
+    // When tab becomes visible again, force a render and send an update.
+    // Browsers throttle rAF on background tabs, so state can lag behind socket events.
+    document.addEventListener("visibilitychange", () => {
+        if (!document.hidden) {
+            if (renderer && scene && camera) {
+                try { renderer.render(scene, camera); } catch (e) {}
+            }
+            sendPlayerUpdate();
+        }
+    });
+
     // STL upload
     document.getElementById("stl-upload").addEventListener("change", onSTLUpload);
 
@@ -1348,6 +1359,13 @@ function initNetwork() {
     socket.on("teleport", (data) => {
         camera.position.fromArray(data.position);
         velocity.set(0, 0, 0);
+        // Immediately notify server of new position so other clients see us there,
+        // even if our rAF loop is throttled (backgrounded tab)
+        sendPlayerUpdate();
+        // Force one render so at least one frame is at the new position
+        if (renderer && scene && camera) {
+            try { renderer.render(scene, camera); } catch (e) {}
+        }
     });
 }
 

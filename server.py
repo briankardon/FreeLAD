@@ -675,19 +675,25 @@ def on_admin_ctf_assign(data):
 
 @socketio.on("admin_ctf_randomize")
 def on_admin_ctf_randomize(data):
-    """Randomly split all currently-connected players between red and blue."""
+    """Randomly split all currently-connected players between red and blue (balanced)."""
     import random
     sid = request.sid
     if not is_admin(sid) or game_mode != "ctf":
         return
     sids = list(players.keys())
     random.shuffle(sids)
+    # Split in half; if odd, red gets the extra
+    split = (len(sids) + 1) // 2
     ctf_state["teams"] = {}
-    for i, psid in enumerate(sids):
-        ctf_state["teams"][psid] = "red" if i % 2 == 0 else "blue"
+    for psid in sids[:split]:
+        ctf_state["teams"][psid] = "red"
+    for psid in sids[split:]:
+        ctf_state["teams"][psid] = "blue"
     broadcast_game_state()
     broadcast_admin_state()
-    print(f"[ADMIN] CTF teams randomized")
+    red_count = sum(1 for v in ctf_state["teams"].values() if v == "red")
+    blue_count = sum(1 for v in ctf_state["teams"].values() if v == "blue")
+    print(f"[ADMIN] CTF teams randomized: {red_count} red, {blue_count} blue ({len(sids)} players)")
 
 
 @socketio.on("admin_ctf_clear_teams")
