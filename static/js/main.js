@@ -1157,9 +1157,11 @@ function updatePlayer(delta) {
 // Collision Detection (raycasting)
 // ============================================================
 function getGroundHeight(position) {
+    // Ray from well above the player straight down; large finite range so it reaches
+    // ground from any reasonable altitude (and doesn't go negative if player dips below 0).
     const origin = new THREE.Vector3(position.x, position.y + 10, position.z);
     raycaster.set(origin, new THREE.Vector3(0, -1, 0));
-    raycaster.far = position.y + 20;
+    raycaster.far = 1000;
 
     const hits = raycaster.intersectObjects(collidables, true);
     for (const hit of hits) {
