@@ -59,6 +59,7 @@ def ctf_public_state():
         "flag_pos": ctf_state["flag_pos"],
         "flag_holder": ctf_state["flag_holder"],
         "scores": ctf_state["scores"],
+        "countdown_end_ts": ctf_state.get("countdown_end_ts"),
     }
 
 
@@ -897,7 +898,9 @@ def on_admin_ctf_start(data):
     if not all(ctf_state["flag_home"][t] for t in ("red", "blue")):
         emit("admin_ctf_error", {"message": "Both flags must be placed before starting."})
         return
-    ctf_state["phase"] = "playing"
+    import time as _time
+    ctf_state["phase"] = "countdown"
+    ctf_state["countdown_end_ts"] = _time.time() + 5
     ctf_state["scores"] = {"red": 0, "blue": 0}
     # Reset flags to their home positions
     for t in ("red", "blue"):
@@ -909,7 +912,18 @@ def on_admin_ctf_start(data):
         if spawn:
             socketio.emit("teleport", {"position": list(spawn)}, to=psid)
     broadcast_game_state()
-    print(f"[ADMIN] CTF game started")
+    print(f"[ADMIN] CTF countdown started")
+
+    def transition_to_playing():
+        # Wait 5 seconds (socketio.sleep yields to other tasks)
+        socketio.sleep(5)
+        # Only transition if we're still in countdown (admin may have stopped)
+        if ctf_state["phase"] == "countdown":
+            ctf_state["phase"] = "playing"
+            broadcast_game_state()
+            print(f"[ADMIN] CTF game now playing")
+
+    socketio.start_background_task(transition_to_playing)
 
 
 @socketio.on("admin_ctf_stop")
@@ -919,6 +933,7 @@ def on_admin_ctf_stop(data):
     if not is_admin(sid) or game_mode != "ctf":
         return
     ctf_state["phase"] = "pregame"
+    ctf_state["countdown_end_ts"] = None
     # Return flags to home
     for t in ("red", "blue"):
         if ctf_state["flag_home"][t]:

@@ -263,11 +263,13 @@ function onKeyDown(e) {
 
         // --- Mode toggles ---
         case "KeyF":
+            if (!canUseFlyClip()) break;
             flyMode = !flyMode;
             updateModeIndicators();
             if (flyMode) velocity.y = 0;
             break;
         case "KeyC":
+            if (!canUseFlyClip()) break;
             clipMode = !clipMode;
             updateModeIndicators();
             break;
@@ -433,6 +435,25 @@ function canEdit() {
     return editingEnabled;
 }
 
+/** Are we a CTF team player during a phase that restricts movement/mode? */
+function isCTFPlayerImmobilized() {
+    // Only locked during the 5-sec countdown, and only for non-admin team players
+    if (isAdmin) return false;
+    if (gameMode !== "ctf" || !ctfState) return false;
+    if (ctfState.phase !== "countdown") return false;
+    return ctfState.teams[myId] === "red" || ctfState.teams[myId] === "blue";
+}
+
+/** Are we permitted to use fly / clip modes right now? */
+function canUseFlyClip() {
+    if (isAdmin) return true;
+    if (gameMode !== "ctf" || !ctfState) return true;
+    // Team players can't fly/clip during countdown or playing
+    const myTeam = ctfState.teams[myId];
+    if (myTeam !== "red" && myTeam !== "blue") return true; // spectators always can
+    return ctfState.phase !== "countdown" && ctfState.phase !== "playing";
+}
+
 function updateUploadVisibility(enabled) {
     const uploadArea = document.querySelector(".upload-area-menu");
     if (!uploadArea) return;
@@ -443,6 +464,60 @@ function updateUploadVisibility(enabled) {
     } else {
         uploadArea.style.display = enabled ? "" : "none";
     }
+}
+
+// ============================================================
+// HUD Message System
+// ============================================================
+let _hudMessageTimer = null;
+
+/**
+ * Show a transient HUD message in the center of the screen.
+ * @param {string} text - message to show
+ * @param {object} opts
+ * @param {number} [opts.duration] - ms to show; 0 = persistent until cleared
+ * @param {string} [opts.variant] - "team-red", "team-blue", "warning", "success", or "" for default
+ */
+function showHudMessage(text, opts = {}) {
+    const { duration = 2000, variant = "" } = opts;
+    const el = document.getElementById("hud-message");
+    el.textContent = text;
+    el.className = variant;
+    el.style.display = "";
+    el.style.opacity = "1";
+    if (_hudMessageTimer) clearTimeout(_hudMessageTimer);
+    if (duration > 0) {
+        _hudMessageTimer = setTimeout(() => {
+            el.style.opacity = "0";
+            setTimeout(() => { el.style.display = "none"; }, 300);
+        }, duration);
+    }
+}
+
+function clearHudMessage() {
+    const el = document.getElementById("hud-message");
+    el.style.display = "none";
+    if (_hudMessageTimer) { clearTimeout(_hudMessageTimer); _hudMessageTimer = null; }
+}
+
+function updateTeamIndicator() {
+    const el = document.getElementById("team-indicator");
+    if (gameMode !== "ctf" || !ctfState) {
+        el.style.display = "none";
+        return;
+    }
+    const myTeam = ctfState.teams[myId];
+    if (myTeam === "red") {
+        el.textContent = "TEAM RED";
+        el.className = "team-red";
+    } else if (myTeam === "blue") {
+        el.textContent = "TEAM BLUE";
+        el.className = "team-blue";
+    } else {
+        el.textContent = "SPECTATOR";
+        el.className = "team-spectator";
+    }
+    el.style.display = "";
 }
 
 function updateModeIndicators() {
@@ -596,9 +671,49 @@ function broadcastLighting() {
     });
 }
 
+let _prevCtfPhase = null;
+let _prevCtfScores = null;
+
 function applyGameState(mode, ctf) {
+    const prevMode = gameMode;
+    const prevPhase = _prevCtfPhase;
+    const prevScores = _prevCtfScores;
     gameMode = mode;
     ctfState = ctf;
+    _prevCtfPhase  = ctf ? ctf.phase : null;
+    _prevCtfScores = ctf ? { ...ctf.scores } : null;
+
+    // Force off fly/clip when a non-admin team player enters a locked phase
+    if (!canUseFlyClip() && (flyMode || clipMode)) {
+        flyMode = false;
+        clipMode = false;
+        moveState.up = moveState.down = false;
+        updateModeIndicators();
+    }
+
+    // HUD announcements tied to phase/score changes
+    if (ctf) {
+        // Phase transitions
+        if (prevPhase !== ctf.phase) {
+            if (ctf.phase === "countdown") {
+                // countdown display handled per-frame
+            } else if (ctf.phase === "playing") {
+                showHudMessage("GO!", { duration: 1500, variant: "success" });
+            } else if (ctf.phase === "pregame" && (prevPhase === "playing" || prevPhase === "countdown")) {
+                showHudMessage("Game ended", { duration: 2500, variant: "warning" });
+            }
+        }
+        // Score changes
+        if (prevScores) {
+            if (ctf.scores.red > prevScores.red) {
+                showHudMessage("RED SCORES!", { duration: 3000, variant: "team-red" });
+            }
+            if (ctf.scores.blue > prevScores.blue) {
+                showHudMessage("BLUE SCORES!", { duration: 3000, variant: "team-blue" });
+            }
+        }
+    }
+
     const ctfActive = (mode === "ctf");
     sandboxGround.visible = !ctfActive;
     ctfGroundBlue.visible = ctfActive;
@@ -623,7 +738,7 @@ function applyGameState(mode, ctf) {
         if (phaseEl) phaseEl.textContent = `Phase: ${ctfState.phase}`;
     }
 
-    // Scoreboard
+    // Scoreboard + team indicator
     const scoreboard = document.getElementById("scoreboard");
     const flagBanner = document.getElementById("flag-banner");
     if (ctfActive) {
@@ -637,6 +752,19 @@ function applyGameState(mode, ctf) {
     } else {
         scoreboard.style.display = "none";
         flagBanner.style.display = "none";
+        document.getElementById("countdown-display").style.display = "none";
+    }
+    updateTeamIndicator();
+
+    // Disable Start button unless both flags and spawns are set
+    const startBtn = document.getElementById("admin-ctf-start-btn");
+    if (startBtn) {
+        const haveFlags  = ctfActive && ctfState.flag_home.red && ctfState.flag_home.blue;
+        const haveSpawns = ctfActive && ctfState.spawns.red && ctfState.spawns.blue;
+        startBtn.disabled = !(haveFlags && haveSpawns);
+        startBtn.title = startBtn.disabled
+            ? "Set both flags (press 1) and both spawns (press 2) first"
+            : "";
     }
 
     updateUploadVisibility(uploadEnabled);
@@ -901,6 +1029,20 @@ function updateAdminPanel(data) {
 // ============================================================
 function updatePlayer(delta) {
     if (!controls.isLocked) return;
+
+    // Immobilize team players during CTF countdown
+    if (isCTFPlayerImmobilized()) {
+        velocity.set(0, 0, 0);
+        // Still apply ground snap so players don't sink
+        if (!flyMode) {
+            const groundY = getGroundHeight(camera.position) + EYE_HEIGHT;
+            if (camera.position.y <= groundY) {
+                camera.position.y = groundY;
+                onGround = true;
+            }
+        }
+        return;
+    }
 
     const baseSpeed = flyMode
         ? (sprinting ? FLY_SPRINT_SPEED : FLY_SPEED)
@@ -1561,12 +1703,30 @@ function syncHeldFlags() {
     }
 }
 
+let _countdownLastShown = -1;
+
+function updateCountdownDisplay() {
+    const el = document.getElementById("countdown-display");
+    if (gameMode !== "ctf" || !ctfState || ctfState.phase !== "countdown" || !ctfState.countdown_end_ts) {
+        if (el.style.display !== "none") el.style.display = "none";
+        _countdownLastShown = -1;
+        return;
+    }
+    const remaining = Math.max(0, Math.ceil(ctfState.countdown_end_ts - Date.now() / 1000));
+    if (remaining !== _countdownLastShown) {
+        el.textContent = remaining > 0 ? remaining : "GO!";
+        el.style.display = "";
+        _countdownLastShown = remaining;
+    }
+}
+
 function animate() {
     requestAnimationFrame(animate);
     const delta = Math.min(clock.getDelta(), 0.1);
 
     updatePlayer(delta);
     interpolateRemotePlayers(delta);
+    updateCountdownDisplay();
     syncHeldFlags();
 
     networkTimer += delta;

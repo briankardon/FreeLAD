@@ -348,6 +348,14 @@ canvas {
     background: rgba(255, 167, 38, 0.4);
 }
 
+button:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+button:disabled:hover {
+    background: rgba(255, 167, 38, 0.2) !important;
+}
+
 .admin-ctf {
     margin-top: 8px;
     border-top: 1px solid rgba(255, 140, 0, 0.2);
@@ -566,7 +574,7 @@ kbd {
 
 #flag-banner {
     position: absolute;
-    top: 80px;
+    top: 110px;
     left: 50%;
     transform: translateX(-50%);
     padding: 6px 20px;
@@ -578,6 +586,60 @@ kbd {
     border-radius: 4px;
     animation: pulse 1s ease-in-out infinite;
 }
+
+#team-indicator {
+    position: absolute;
+    top: 80px;
+    left: 50%;
+    transform: translateX(-50%);
+    padding: 4px 16px;
+    color: #fff;
+    font-weight: bold;
+    font-size: 13px;
+    letter-spacing: 2px;
+    border-radius: 4px;
+}
+
+#team-indicator.team-red { background: rgba(231, 76, 60, 0.85); }
+#team-indicator.team-blue { background: rgba(52, 152, 219, 0.85); }
+#team-indicator.team-spectator { background: rgba(128, 128, 128, 0.7); }
+
+#countdown-display {
+    position: absolute;
+    top: 42%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    padding: 16px 40px;
+    background: rgba(0, 0, 0, 0.7);
+    color: #ffa726;
+    font-weight: bold;
+    font-size: 80px;
+    border-radius: 12px;
+    letter-spacing: 4px;
+    text-shadow: 0 0 20px rgba(255, 167, 38, 0.7);
+}
+
+#hud-message {
+    position: absolute;
+    top: 35%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    padding: 12px 32px;
+    background: rgba(0, 0, 0, 0.75);
+    color: #fff;
+    font-weight: bold;
+    font-size: 28px;
+    border-radius: 8px;
+    letter-spacing: 2px;
+    text-align: center;
+    transition: opacity 0.3s ease;
+    pointer-events: none;
+}
+
+#hud-message.team-red { color: #e74c3c; }
+#hud-message.team-blue { color: #3498db; }
+#hud-message.warning { color: #ffa726; }
+#hud-message.success { color: #2ecc71; }
 
 @keyframes pulse {
     0%, 100% { opacity: 0.85; }
