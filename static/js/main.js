@@ -289,7 +289,9 @@ function onKeyDown(e) {
         case "Digit2":
             if (isAdmin && gameMode === "ctf") {
                 const p = camera.position.clone();
-                p.y -= EYE_HEIGHT;
+                // Offset slightly above feet so players spawn just above the surface
+                // and don't fall through due to floating-point imprecision
+                p.y -= EYE_HEIGHT - 0.2;
                 socket.emit("admin_ctf_place_spawn", { position: [p.x, p.y, p.z] });
             }
             break;
