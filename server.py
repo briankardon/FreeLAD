@@ -117,6 +117,45 @@ def load_existing_stls():
 
 load_existing_stls()
 
+
+CTF_MAP_FILE = os.path.join(STL_DIR, "ctf_map.json")
+
+
+def save_ctf_map():
+    """Persist flag homes and spawn positions to disk (inside STL_DIR so they're part of scene zips)."""
+    data = {
+        "flag_home": ctf_state["flag_home"],
+        "spawns": ctf_state["spawns"],
+    }
+    try:
+        with open(CTF_MAP_FILE, "w") as f:
+            json.dump(data, f, indent=2)
+    except OSError:
+        pass
+
+
+def load_ctf_map():
+    """Load flag homes and spawn positions from disk, if available."""
+    if not os.path.exists(CTF_MAP_FILE):
+        return
+    try:
+        with open(CTF_MAP_FILE) as f:
+            data = json.load(f)
+    except (json.JSONDecodeError, OSError):
+        return
+    if "flag_home" in data:
+        for t in ("red", "blue"):
+            ctf_state["flag_home"][t] = data["flag_home"].get(t)
+            if ctf_state["flag_home"][t]:
+                ctf_state["flag_pos"][t] = list(ctf_state["flag_home"][t])
+    if "spawns" in data:
+        for t in ("red", "blue"):
+            ctf_state["spawns"][t] = data["spawns"].get(t)
+
+
+load_ctf_map()
+
+
 # Assign colors to players
 PLAYER_COLORS = [
     "#e74c3c", "#3498db", "#2ecc71", "#f39c12", "#9b59b6",
@@ -318,8 +357,17 @@ def admin_load_scene():
     stl_models.clear()
     load_existing_stls()
 
+    # Also restore CTF map layout (flag homes + spawns) if the zip included one
+    # Clear existing first so missing file means cleared state
+    ctf_state["flag_home"] = {"red": None, "blue": None}
+    ctf_state["spawns"]    = {"red": None, "blue": None}
+    ctf_state["flag_pos"]  = {"red": None, "blue": None}
+    load_ctf_map()
+
     # Broadcast full scene refresh to all clients
     socketio.emit("scene_reloaded", {"models": list(stl_models.values())})
+    if game_mode == "ctf":
+        broadcast_game_state()
     broadcast_admin_state()
     print(f"[ADMIN] Scene loaded from uploaded zip ({len(stl_models)} models)")
     return jsonify({"ok": True, "count": len(stl_models)})
@@ -753,6 +801,7 @@ def on_admin_ctf_place_flag(data):
     ctf_state["flag_home"][side] = list(position)
     ctf_state["flag_pos"][side] = list(position)
     ctf_state["flag_holder"][side] = None
+    save_ctf_map()
     broadcast_game_state()
     print(f"[ADMIN] Placed {side} flag at {position}")
 
@@ -768,6 +817,7 @@ def on_admin_ctf_place_spawn(data):
         return
     side = side_from_x(position[0])
     ctf_state["spawns"][side] = list(position)
+    save_ctf_map()
     broadcast_game_state()
     print(f"[ADMIN] Placed {side} spawn at {position}")
 
