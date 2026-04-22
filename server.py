@@ -764,7 +764,7 @@ def distance(a, b):
     return ((a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2 + (a[2] - b[2]) ** 2) ** 0.5
 
 
-def tag_player(sid):
+def tag_player(sid, tagger_sid=None):
     """Handle a player being tagged: drop any held flag at current position, teleport to spawn."""
     if sid not in players:
         return
@@ -775,6 +775,9 @@ def tag_player(sid):
             # Flag drops at feet level; player position has EYE_HEIGHT offset from client
             ctf_state["flag_pos"][team] = [pos[0], max(0, pos[1] - 1.6), pos[2]]
             ctf_state["flag_holder"][team] = None
+            socketio.emit("ctf_event", {"type": "flag_drop", "actor": sid, "team": team})
+    # Notify everyone of the tag
+    socketio.emit("ctf_event", {"type": "player_tagged", "target": sid, "actor": tagger_sid})
     # Teleport to own spawn
     team = ctf_state["teams"].get(sid)
     if team and ctf_state["spawns"].get(team):
@@ -809,6 +812,7 @@ def process_ctf_contacts(sid):
         if distance(my_feet, enemy_flag_pos) < CTF_FLAG_CONTACT_DIST:
             ctf_state["flag_holder"][enemy_team] = sid
             ctf_state["flag_pos"][enemy_team] = list(my_pos)
+            socketio.emit("ctf_event", {"type": "flag_pickup", "actor": sid, "team": enemy_team})
             broadcast_game_state()
 
     # 2. Touch own flag (when it's not at home): return it
@@ -820,6 +824,7 @@ def process_ctf_contacts(sid):
         if not is_at_home:
             if distance(my_feet, own_flag_pos) < CTF_FLAG_CONTACT_DIST:
                 ctf_state["flag_pos"][my_team] = list(own_flag_home)
+                socketio.emit("ctf_event", {"type": "flag_return", "actor": sid, "team": my_team})
                 broadcast_game_state()
 
     # 3. Carrier touching own flag home: capture!
@@ -827,6 +832,7 @@ def process_ctf_contacts(sid):
     if carrying_enemy and own_flag_home:
         if distance(my_feet, own_flag_home) < CTF_FLAG_CONTACT_DIST:
             ctf_state["scores"][my_team] += 1
+            socketio.emit("ctf_event", {"type": "flag_capture", "actor": sid, "team": my_team})
             # Reset both flags to home
             for t in ("red", "blue"):
                 if ctf_state["flag_home"][t]:
@@ -858,17 +864,17 @@ def process_ctf_contacts(sid):
         they_on_their_home = (other["position"][0] * other_home_sign) > 0
 
         if i_carry_enemy and they_carry_enemy:
-            # Both carrying - both get tagged
-            tag_player(sid)
-            tag_player(other_sid)
+            # Both carrying - both get tagged (they tagged each other)
+            tag_player(sid, tagger_sid=other_sid)
+            tag_player(other_sid, tagger_sid=sid)
         elif i_carry_enemy:
-            tag_player(sid)
+            tag_player(sid, tagger_sid=other_sid)
         elif they_carry_enemy:
-            tag_player(other_sid)
+            tag_player(other_sid, tagger_sid=sid)
         elif not i_am_on_my_home and they_on_their_home:
-            tag_player(sid)
+            tag_player(sid, tagger_sid=other_sid)
         elif not they_on_their_home and i_am_on_my_home:
-            tag_player(other_sid)
+            tag_player(other_sid, tagger_sid=sid)
         # Both on their own home or both on enemy home: no tag
         broadcast_game_state()
 

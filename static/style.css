@@ -641,6 +641,38 @@ kbd {
 #hud-message.warning { color: #ffa726; }
 #hud-message.success { color: #2ecc71; }
 
+#event-log {
+    position: absolute;
+    top: 44px;
+    right: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    align-items: flex-end;
+    max-width: 320px;
+    pointer-events: none;
+}
+
+.event-log-entry {
+    padding: 3px 10px;
+    background: rgba(0, 0, 0, 0.55);
+    color: #e0e0e0;
+    font-size: 12px;
+    border-radius: 3px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
+    transition: opacity 1s ease;
+}
+
+.event-log-entry.fading { opacity: 0; }
+.event-log-entry.team-red  { color: #f1948a; }
+.event-log-entry.team-blue { color: #85c1e9; }
+.event-log-entry.warning   { color: #ffa726; }
+.event-log-entry.success   { color: #2ecc71; }
+.event-log-entry.muted     { color: #888; }
+
 @keyframes pulse {
     0%, 100% { opacity: 0.85; }
     50%      { opacity: 1.0; }

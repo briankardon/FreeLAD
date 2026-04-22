@@ -501,6 +501,35 @@ function clearHudMessage() {
     if (_hudMessageTimer) { clearTimeout(_hudMessageTimer); _hudMessageTimer = null; }
 }
 
+/**
+ * Append a short event notification to the upper-right log.
+ * Entries fade out after ~10 seconds.
+ * @param {string} text
+ * @param {string} [variant] - "team-red", "team-blue", "warning", "success", "muted"
+ */
+const EVENT_LOG_MAX = 12;
+function logEvent(text, variant = "") {
+    const log = document.getElementById("event-log");
+    const entry = document.createElement("div");
+    entry.className = "event-log-entry" + (variant ? " " + variant : "");
+    entry.textContent = text;
+    log.appendChild(entry);
+    // Keep the log capped
+    while (log.children.length > EVENT_LOG_MAX) log.removeChild(log.firstChild);
+    // Fade out after 9s, remove after the 1s transition finishes
+    setTimeout(() => {
+        entry.classList.add("fading");
+        setTimeout(() => entry.remove(), 1100);
+    }, 9000);
+}
+
+// Known player names keyed by socket id, for formatting event log lines.
+const playerNames = new Map();
+function nameFor(sid) {
+    if (sid === myId) return "You";
+    return playerNames.get(sid) || "Someone";
+}
+
 function updateTeamIndicator() {
     const el = document.getElementById("team-indicator");
     if (gameMode !== "ctf" || !ctfState) {
@@ -674,15 +703,18 @@ function broadcastLighting() {
 
 let _prevCtfPhase = null;
 let _prevCtfScores = null;
+let _prevCtfTeams = null;
 
 function applyGameState(mode, ctf) {
     const prevMode = gameMode;
     const prevPhase = _prevCtfPhase;
     const prevScores = _prevCtfScores;
+    const prevTeams = _prevCtfTeams;
     gameMode = mode;
     ctfState = ctf;
     _prevCtfPhase  = ctf ? ctf.phase : null;
     _prevCtfScores = ctf ? { ...ctf.scores } : null;
+    _prevCtfTeams  = ctf ? { ...ctf.teams } : null;
 
     // Force off fly/clip when a non-admin team player enters a locked phase
     if (!canUseFlyClip() && (flyMode || clipMode)) {
@@ -711,6 +743,21 @@ function applyGameState(mode, ctf) {
             }
             if (ctf.scores.blue > prevScores.blue) {
                 showHudMessage("BLUE SCORES!", { duration: 3000, variant: "team-blue" });
+            }
+        }
+        // Team changes - diff prev vs new
+        if (prevTeams) {
+            const allSids = new Set([...Object.keys(prevTeams), ...Object.keys(ctf.teams)]);
+            for (const sid of allSids) {
+                const was = prevTeams[sid];
+                const now = ctf.teams[sid];
+                if (was === now) continue;
+                const who = nameFor(sid);
+                if (!now) {
+                    logEvent(`${who} → spectator`, "muted");
+                } else {
+                    logEvent(`${who} → ${now.toUpperCase()} team`, "team-" + now);
+                }
             }
         }
     }
@@ -1357,11 +1404,15 @@ function initNetwork() {
     socket.on("welcome", (data) => {
         myId = data.you.id;
         console.log("Connected as", data.you.name, "color:", data.you.color);
+        playerNames.set(myId, data.you.name);
 
         // Apply saved name/color immediately on connect
         const savedName = localStorage.getItem("freelad_name");
         const savedColor = localStorage.getItem("freelad_color");
-        if (savedName) socket.emit("set_name", { name: savedName });
+        if (savedName) {
+            socket.emit("set_name", { name: savedName });
+            playerNames.set(myId, savedName);
+        }
         if (savedColor) socket.emit("set_color", { color: savedColor });
 
         // Sync the color picker to saved or server-assigned color
@@ -1369,6 +1420,7 @@ function initNetwork() {
 
         for (const [sid, player] of Object.entries(data.players)) {
             addRemotePlayer(player);
+            playerNames.set(sid, player.name);
         }
         for (const model of data.stl_models) {
             loadSTLModel(model);
@@ -1385,10 +1437,15 @@ function initNetwork() {
 
     socket.on("player_joined", (player) => {
         addRemotePlayer(player);
+        playerNames.set(player.id, player.name);
+        logEvent(`${player.name} joined`, "muted");
         updatePlayerCount();
     });
 
     socket.on("player_left", (data) => {
+        const name = playerNames.get(data.id) || "Someone";
+        logEvent(`${name} left`, "muted");
+        playerNames.delete(data.id);
         removeRemotePlayer(data.id);
         updatePlayerCount();
     });
@@ -1398,6 +1455,7 @@ function initNetwork() {
     });
 
     socket.on("player_renamed", (data) => {
+        playerNames.set(data.id, data.name);
         updateRemotePlayerName(data.id, data.name);
     });
 
@@ -1506,6 +1564,29 @@ function initNetwork() {
 
     socket.on("admin_ctf_error", (data) => {
         alert(data.message);
+    });
+
+    socket.on("ctf_event", (ev) => {
+        const actor = nameFor(ev.actor);
+        const target = nameFor(ev.target);
+        const team = ev.team;
+        switch (ev.type) {
+            case "flag_pickup":
+                logEvent(`${actor} picked up the ${team.toUpperCase()} flag`, "team-" + team);
+                break;
+            case "flag_drop":
+                logEvent(`${actor} dropped the ${team.toUpperCase()} flag`, "team-" + team);
+                break;
+            case "flag_return":
+                logEvent(`${actor} returned the ${team.toUpperCase()} flag`, "team-" + team);
+                break;
+            case "flag_capture":
+                logEvent(`${actor} captured for ${team.toUpperCase()}!`, "success");
+                break;
+            case "player_tagged":
+                logEvent(`${target} was tagged by ${actor}`, "warning");
+                break;
+        }
     });
 
     socket.on("teleport", (data) => {
