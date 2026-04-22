@@ -229,7 +229,9 @@ canvas {
     outline: none;
 }
 
-#admin-teleport-btn {
+#admin-teleport-btn,
+#admin-save-scene-btn,
+#admin-load-scene-btn {
     padding: 5px 14px;
     font-size: 13px;
     border: 1px solid #ffa726;
@@ -239,7 +241,9 @@ canvas {
     cursor: pointer;
 }
 
-#admin-teleport-btn:hover {
+#admin-teleport-btn:hover,
+#admin-save-scene-btn:hover,
+#admin-load-scene-btn:hover {
     background: rgba(255, 167, 38, 0.4);
 }
 

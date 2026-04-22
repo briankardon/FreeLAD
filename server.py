@@ -6,7 +6,10 @@ A multiplayer 3D virtual world server for viewing and interacting with STL model
 import os
 import uuid
 import json
-from flask import Flask, send_from_directory, request, jsonify
+import io
+import zipfile
+from datetime import datetime
+from flask import Flask, send_from_directory, request, jsonify, send_file
 from flask_socketio import SocketIO, emit
 
 app = Flask(__name__, static_folder="static")
@@ -259,6 +262,67 @@ def upload_stl():
 @app.route("/api/stl_models")
 def list_stl_models():
     return jsonify(list(stl_models.values()))
+
+
+@app.route("/admin/save_scene")
+def admin_save_scene():
+    """Bundle all STL files and their metadata JSONs into a zip for download. Admin-only."""
+    token = request.args.get("token", "")
+    if token not in admin_sids:
+        return jsonify({"error": "Admin authentication required"}), 403
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for filename in os.listdir(STL_DIR):
+            filepath = os.path.join(STL_DIR, filename)
+            if os.path.isfile(filepath):
+                zf.write(filepath, arcname=filename)
+    buf.seek(0)
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    return send_file(buf, mimetype="application/zip", as_attachment=True,
+                     download_name=f"freelad_scene_{timestamp}.zip")
+
+
+@app.route("/admin/load_scene", methods=["POST"])
+def admin_load_scene():
+    """Replace all current STLs with contents of an uploaded zip. Admin-only."""
+    token = request.form.get("token", "")
+    if token not in admin_sids:
+        return jsonify({"error": "Admin authentication required"}), 403
+    if "file" not in request.files:
+        return jsonify({"error": "No file provided"}), 400
+
+    f = request.files["file"]
+    try:
+        data = f.read()
+        zf = zipfile.ZipFile(io.BytesIO(data))
+    except zipfile.BadZipFile:
+        return jsonify({"error": "Not a valid zip file"}), 400
+
+    # Validate contents before wiping anything
+    for name in zf.namelist():
+        if name.endswith("/") or ".." in name or name.startswith("/"):
+            return jsonify({"error": f"Invalid path in zip: {name}"}), 400
+        if not (name.lower().endswith(".stl") or name.lower().endswith(".json")):
+            return jsonify({"error": f"Only .stl and .json files allowed in zip: {name}"}), 400
+
+    # Clear current stl_files directory
+    for filename in os.listdir(STL_DIR):
+        filepath = os.path.join(STL_DIR, filename)
+        if os.path.isfile(filepath):
+            os.remove(filepath)
+
+    # Extract all zip members into STL_DIR
+    zf.extractall(STL_DIR)
+
+    # Rebuild in-memory model list
+    stl_models.clear()
+    load_existing_stls()
+
+    # Broadcast full scene refresh to all clients
+    socketio.emit("scene_reloaded", {"models": list(stl_models.values())})
+    broadcast_admin_state()
+    print(f"[ADMIN] Scene loaded from uploaded zip ({len(stl_models)} models)")
+    return jsonify({"ok": True, "count": len(stl_models)})
 
 
 # --- Socket.IO Events ---

@@ -481,6 +481,41 @@ function initAdminUI() {
         socket.emit("admin_teleport_all", { position: camera.position.toArray() });
     });
 
+    document.getElementById("admin-save-scene-btn").addEventListener("click", () => {
+        // Trigger browser download with admin token
+        const url = `/admin/save_scene?token=${encodeURIComponent(myId)}`;
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = "";
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+    });
+
+    document.getElementById("admin-load-scene-btn").addEventListener("click", () => {
+        document.getElementById("admin-load-scene-input").click();
+    });
+
+    document.getElementById("admin-load-scene-input").addEventListener("change", async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        if (!confirm(`Load scene "${file.name}"? This will REPLACE all current models.`)) {
+            e.target.value = "";
+            return;
+        }
+        const formData = new FormData();
+        formData.append("file", file);
+        formData.append("token", myId);
+        try {
+            const resp = await fetch("/admin/load_scene", { method: "POST", body: formData });
+            const data = await resp.json();
+            if (data.error) alert("Load failed: " + data.error);
+        } catch (err) {
+            alert("Load failed: " + err.message);
+        }
+        e.target.value = "";
+    });
+
     // Lighting controls
     const lightInputs = [
         ["admin-ambient-intensity", "admin-ambient-color"],
@@ -1234,6 +1269,21 @@ function initNetwork() {
             if (idx >= 0) collidables.splice(idx, 1);
             mesh.geometry.dispose();
             mesh.material.dispose();
+        }
+    });
+
+    socket.on("scene_reloaded", (data) => {
+        // Wipe all current STL meshes and load the new scene
+        deselectModel();
+        for (const [id, mesh] of stlMeshes) {
+            scene.remove(mesh);
+            mesh.geometry.dispose();
+            mesh.material.dispose();
+        }
+        stlMeshes.clear();
+        collidables.length = 0;
+        for (const model of data.models) {
+            loadSTLModel(model);
         }
     });
 
