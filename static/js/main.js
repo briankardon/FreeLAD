@@ -569,6 +569,9 @@ function initAdminUI() {
     document.getElementById("admin-ctf-randomize-btn").addEventListener("click", () => {
         socket.emit("admin_ctf_randomize", {});
     });
+    document.getElementById("admin-ctf-by-position-btn").addEventListener("click", () => {
+        socket.emit("admin_ctf_assign_by_position", {});
+    });
     document.getElementById("admin-ctf-clear-btn").addEventListener("click", () => {
         socket.emit("admin_ctf_clear_teams", {});
     });

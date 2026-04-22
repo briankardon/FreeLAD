@@ -700,6 +700,27 @@ def on_admin_ctf_randomize(data):
     print(f"[ADMIN] CTF teams randomized: {red_count} red, {blue_count} blue ({len(sids)} non-admin players)")
 
 
+@socketio.on("admin_ctf_assign_by_position")
+def on_admin_ctf_assign_by_position(data):
+    """Assign non-admin players to teams based on their current X position (X<0 blue, X>=0 red)."""
+    sid = request.sid
+    if not is_admin(sid) or game_mode != "ctf":
+        return
+    # Preserve existing admin team assignments
+    new_teams = {psid: team for psid, team in ctf_state["teams"].items() if is_admin(psid)}
+    for psid, p in players.items():
+        if is_admin(psid):
+            continue
+        pos = p.get("position", [0, 0, 0])
+        new_teams[psid] = "blue" if pos[0] < 0 else "red"
+    ctf_state["teams"] = new_teams
+    broadcast_game_state()
+    broadcast_admin_state()
+    red_count = sum(1 for v in ctf_state["teams"].values() if v == "red")
+    blue_count = sum(1 for v in ctf_state["teams"].values() if v == "blue")
+    print(f"[ADMIN] CTF teams assigned by position: {red_count} red, {blue_count} blue")
+
+
 @socketio.on("admin_ctf_clear_teams")
 def on_admin_ctf_clear_teams(data):
     """Clear all team assignments (everyone becomes spectator)."""

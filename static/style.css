@@ -330,7 +330,9 @@ canvas {
     color: #fff !important;
 }
 
-#admin-ctf-randomize-btn, #admin-ctf-clear-btn {
+#admin-ctf-randomize-btn,
+#admin-ctf-by-position-btn,
+#admin-ctf-clear-btn {
     padding: 5px 12px;
     font-size: 12px;
     border: 1px solid #ffa726;
@@ -340,7 +342,9 @@ canvas {
     cursor: pointer;
 }
 
-#admin-ctf-randomize-btn:hover, #admin-ctf-clear-btn:hover {
+#admin-ctf-randomize-btn:hover,
+#admin-ctf-by-position-btn:hover,
+#admin-ctf-clear-btn:hover {
     background: rgba(255, 167, 38, 0.4);
 }
 
