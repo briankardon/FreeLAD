@@ -809,10 +809,12 @@ def clean_ctf_state_for_player(sid):
 
 
 def tag_player(sid):
-    """Handle a player being tagged: drop any held flag at current position, teleport to spawn.
-    Does NOT emit a player_tagged event - the caller is responsible for that per-collision."""
+    """Mark a player as tagged: drop any held flag at current position.
+    Returns the spawn position (for the caller to emit teleport AFTER broadcasting
+    updated game state) or None if the player has no valid team spawn.
+    Does NOT emit teleport or player_tagged - the caller is responsible."""
     if sid not in players:
-        return
+        return None
     # If carrying a flag, drop it at current position (ground level)
     for team in ("red", "blue"):
         if ctf_state["flag_holder"][team] == sid:
@@ -821,10 +823,10 @@ def tag_player(sid):
             ctf_state["flag_pos"][team] = [pos[0], max(0, pos[1] - 1.6), pos[2]]
             ctf_state["flag_holder"][team] = None
             socketio.emit("ctf_event", {"type": "flag_drop", "actor": sid, "team": team})
-    # Teleport to own spawn
     team = ctf_state["teams"].get(sid)
     if team and ctf_state["spawns"].get(team):
-        socketio.emit("teleport", {"position": list(ctf_state["spawns"][team])}, to=sid)
+        return list(ctf_state["spawns"][team])
+    return None
 
 
 def process_ctf_contacts(sid):
@@ -893,6 +895,7 @@ def process_ctf_contacts(sid):
     # when two opposing players collide, both go back to their spawns, unless
     # both are safely on their own home territory (no tag).
     tagged_anyone = False
+    pending_teleports = []  # [(sid, spawn_pos), ...] - sent AFTER game_state broadcast
     for other_sid, other in list(players.items()):
         if other_sid == sid:
             continue
@@ -926,12 +929,19 @@ def process_ctf_contacts(sid):
             # Both carrying flags, or both on enemy territory, or other edge case
             tagger, target = sid, other_sid
 
-        tag_player(sid)
-        tag_player(other_sid)
+        spawn_a = tag_player(sid)
+        spawn_b = tag_player(other_sid)
+        if spawn_a: pending_teleports.append((sid, spawn_a))
+        if spawn_b: pending_teleports.append((other_sid, spawn_b))
         socketio.emit("ctf_event", {"type": "player_tagged", "target": target, "actor": tagger})
         tagged_anyone = True
     if tagged_anyone:
+        # Broadcast state FIRST so clients have flag_holder=null before they
+        # teleport. Otherwise the carrier's client keeps syncing the flag to
+        # its camera position between the teleport and the game_state event.
         broadcast_game_state()
+        for psid, pos in pending_teleports:
+            socketio.emit("teleport", {"position": pos}, to=psid)
 
 
 @socketio.on("admin_ctf_place_flag")

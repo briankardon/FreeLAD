@@ -709,6 +709,13 @@ function applyGameState(mode, ctf) {
     const prevMode = gameMode;
     const prevPhase = _prevCtfPhase;
     const prevScores = _prevCtfScores;
+
+    // Clear any STL selection when the mode changes (CTF disallows editing for
+    // non-admins, and a stale highlighted model would be un-clearable)
+    if (prevMode !== mode && selectedModel) {
+        deselectModel();
+    }
+
     const prevTeams = _prevCtfTeams;
     gameMode = mode;
     ctfState = ctf;
@@ -1115,9 +1122,11 @@ function updatePlayer(delta) {
         if (moveState.up) moveDir.y += 1;
         if (moveState.down) moveDir.y -= 1;
         if (moveState.forward || moveState.backward) {
-            const pitch = -camDir.y;
-            if (moveState.forward) moveDir.y += pitch;
-            if (moveState.backward) moveDir.y -= pitch;
+            // camDir.y > 0 when looking up, < 0 when looking down.
+            // Forward should follow camera pitch so looking-and-pressing-W
+            // actually moves toward where you're looking.
+            if (moveState.forward)  moveDir.y += camDir.y;
+            if (moveState.backward) moveDir.y -= camDir.y;
         }
         moveDir.normalize();
         velocity.set(moveDir.x * speed, moveDir.y * speed, moveDir.z * speed);
