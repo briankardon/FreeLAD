@@ -1036,13 +1036,26 @@ function updateAdminPanel(data) {
         nameSpan.style.maxWidth = "150px";
         nameSpan.style.direction = "rtl";
         nameSpan.style.textAlign = "left";
+        const colorInput = document.createElement("input");
+        colorInput.type = "color";
+        colorInput.className = "model-color-input";
+        colorInput.value = model.color || "#aaaacc";
+        colorInput.title = "Change model color";
+        colorInput.addEventListener("input", (e) => {
+            e.stopPropagation();
+            socket.emit("admin_set_model_color", { id: model.id, color: e.target.value });
+        });
+        colorInput.addEventListener("click", (e) => e.stopPropagation());
+
         const delBtn = document.createElement("button");
         delBtn.textContent = "Del";
         delBtn.addEventListener("click", (e) => {
             e.stopPropagation();
             socket.emit("admin_delete_model", { id: model.id });
         });
+
         li.appendChild(nameSpan);
+        li.appendChild(colorInput);
         li.appendChild(delBtn);
         modelList.appendChild(li);
     }
@@ -1483,6 +1496,7 @@ function initNetwork() {
             mesh.position.fromArray(modelInfo.position);
             mesh.rotation.set(...modelInfo.rotation);
             mesh.scale.fromArray(modelInfo.scale);
+            if (modelInfo.color) mesh.material.color.set(modelInfo.color);
         }
     });
 

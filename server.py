@@ -205,7 +205,7 @@ def broadcast_admin_state(target_sid=None):
     data = {
         "settings": admin_settings,
         "models": [
-            {"id": m["id"], "name": m["original_name"]}
+            {"id": m["id"], "name": m["original_name"], "color": m.get("color", "#aaaacc")}
             for m in stl_models.values()
         ],
         "players": [
@@ -567,6 +567,21 @@ def on_admin_delete_model(data):
         if os.path.exists(mp):
             os.remove(mp)
         socketio.emit("stl_removed", {"id": model_id})
+        broadcast_admin_state()
+
+
+@socketio.on("admin_set_model_color")
+def on_admin_set_model_color(data):
+    sid = request.sid
+    if not is_admin(sid):
+        return
+    model_id = data.get("id")
+    color = (data.get("color") or "").strip()
+    if model_id in stl_models and color:
+        stl_models[model_id]["color"] = color
+        save_meta(stl_models[model_id])
+        # Reuse stl_transformed which carries the full model dict including color
+        socketio.emit("stl_transformed", stl_models[model_id])
         broadcast_admin_state()
 
 

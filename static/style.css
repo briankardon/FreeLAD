@@ -294,6 +294,20 @@ canvas {
     border-bottom: 1px solid rgba(255, 255, 255, 0.05);
 }
 
+.model-color-input {
+    width: 20px;
+    height: 18px;
+    border: 1px solid #666;
+    border-radius: 3px;
+    background: none;
+    cursor: pointer;
+    padding: 0;
+    margin-left: 6px;
+    flex-shrink: 0;
+}
+.model-color-input::-webkit-color-swatch-wrapper { padding: 0; }
+.model-color-input::-webkit-color-swatch { border: none; border-radius: 2px; }
+
 .admin-list-col li button {
     padding: 1px 8px;
     font-size: 11px;
