@@ -1508,6 +1508,8 @@ function initNetwork() {
         if (!mesh) return;
         stlLoader.load(`/stl_files/${modelInfo.filename}`, (geometry) => {
             geometry.computeVertexNormals();
+            // Match loadSTLModel: saved positions are relative to centered geometry
+            geometry.center();
             mesh.geometry.dispose();
             mesh.geometry = geometry;
             mesh.userData.originalName = modelInfo.original_name;
