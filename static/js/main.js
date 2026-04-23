@@ -597,12 +597,36 @@ function initAdminUI() {
         socket.emit("admin_teleport_all", { position: camera.position.toArray() });
     });
 
-    document.getElementById("admin-save-scene-btn").addEventListener("click", () => {
-        // Trigger browser download with admin token
+    document.getElementById("admin-save-scene-btn").addEventListener("click", async () => {
         const url = `/admin/save_scene?token=${encodeURIComponent(myId)}`;
+        const stamp = new Date().toISOString().replace(/[:T]/g, "-").split(".")[0];
+        const suggestedName = `freelad_scene_${stamp}.zip`;
+
+        // Modern browsers (Chrome/Edge): "Save As" dialog via File System Access API
+        if (window.showSaveFilePicker) {
+            try {
+                const handle = await window.showSaveFilePicker({
+                    suggestedName,
+                    types: [{ description: "Zip archive", accept: { "application/zip": [".zip"] } }],
+                });
+                const resp = await fetch(url);
+                if (!resp.ok) throw new Error(`Server returned ${resp.status}`);
+                const blob = await resp.blob();
+                const writable = await handle.createWritable();
+                await writable.write(blob);
+                await writable.close();
+                return;
+            } catch (err) {
+                if (err.name === "AbortError") return; // user cancelled
+                console.error("Save As failed, falling back to direct download:", err);
+                // fall through to direct-download path
+            }
+        }
+
+        // Fallback: direct download to the browser's default location
         const a = document.createElement("a");
         a.href = url;
-        a.download = "";
+        a.download = suggestedName;
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
