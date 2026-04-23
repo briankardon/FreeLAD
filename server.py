@@ -699,14 +699,17 @@ def on_admin_set_mode(data):
         return
     game_mode = new_mode
     if new_mode == "ctf":
-        # Reset CTF state when entering mode
+        # Reset live gameplay state on mode entry, but PRESERVE the map layout
+        # (flag_home, spawns) so a scene loaded in sandbox still has its CTF
+        # placements when the admin switches to CTF.
         ctf_state["phase"] = "pregame"
         ctf_state["teams"] = {}
-        ctf_state["spawns"] = {"red": None, "blue": None}
-        ctf_state["flag_home"] = {"red": None, "blue": None}
-        ctf_state["flag_pos"] = {"red": None, "blue": None}
         ctf_state["flag_holder"] = {"red": None, "blue": None}
         ctf_state["scores"] = {"red": 0, "blue": 0}
+        # Snap each flag back to its home position (if a home exists)
+        for t in ("red", "blue"):
+            home = ctf_state["flag_home"].get(t)
+            ctf_state["flag_pos"][t] = list(home) if home else None
     broadcast_game_state()
     broadcast_admin_state()
     print(f"[ADMIN] Game mode set to {new_mode}")
