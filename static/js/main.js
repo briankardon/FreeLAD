@@ -1036,6 +1036,8 @@ function updateAdminPanel(data) {
         nameSpan.style.maxWidth = "150px";
         nameSpan.style.direction = "rtl";
         nameSpan.style.textAlign = "left";
+        nameSpan.style.flex = "1";
+        nameSpan.style.minWidth = "0";
         const colorInput = document.createElement("input");
         colorInput.type = "color";
         colorInput.className = "model-color-input";
