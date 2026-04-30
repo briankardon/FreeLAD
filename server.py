@@ -8,6 +8,7 @@ import uuid
 import json
 import io
 import time
+import socket
 import zipfile
 from datetime import datetime
 from flask import Flask, send_from_directory, request, jsonify, send_file
@@ -1076,14 +1077,65 @@ def cleanup_stale_players():
             broadcast_admin_state()
 
 
+def get_lan_ips():
+    """Return a list of likely LAN IPv4 addresses for this machine.
+
+    Tries the UDP-connect trick first to find the primary outbound interface,
+    then enumerates all interfaces via getaddrinfo and filters to private ranges.
+    """
+    ips = []
+
+    # Primary outbound interface (no packets are sent; just resolves routing).
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("8.8.8.8", 80))
+        primary = s.getsockname()[0]
+        s.close()
+        if primary and primary != "0.0.0.0":
+            ips.append(primary)
+    except OSError:
+        pass
+
+    # All interfaces; keep only RFC1918 / link-local-private ranges.
+    try:
+        for info in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET):
+            addr = info[4][0]
+            if addr in ips or addr.startswith("127."):
+                continue
+            if (addr.startswith("10.") or addr.startswith("192.168.") or
+                    any(addr.startswith(f"172.{n}.") for n in range(16, 32))):
+                ips.append(addr)
+    except socket.gaierror:
+        pass
+
+    return ips
+
+
 if __name__ == "__main__":
     import sys
     port = int(sys.argv[1]) if len(sys.argv) > 1 else 5000
     if len(sys.argv) > 2:
         ADMIN_PASSWORD = sys.argv[2]
-    print(f"FreeLAD server starting on http://0.0.0.0:{port}")
-    print(f"Admin password: {ADMIN_PASSWORD}")
-    print(f"STL directory: {STL_DIR}")
-    print(f"Pre-loaded {len(stl_models)} STL model(s)")
+
+    lan_ips = get_lan_ips()
+    print()
+    print("=" * 60)
+    print("  FreeLAD server starting")
+    print("=" * 60)
+    print(f"  On this computer:    http://localhost:{port}")
+    if lan_ips:
+        print(f"  Others on your Wi-Fi: http://{lan_ips[0]}:{port}")
+        for extra in lan_ips[1:]:
+            print(f"                     or http://{extra}:{port}")
+    else:
+        print("  Could not detect a LAN IP address. Run 'ipconfig' (Windows)")
+        print("  or 'hostname -I' (Linux) / 'ipconfig getifaddr en0' (Mac).")
+    print("-" * 60)
+    print(f"  Admin password: {ADMIN_PASSWORD}")
+    print(f"  STL directory:  {STL_DIR}")
+    print(f"  Pre-loaded {len(stl_models)} STL model(s)")
+    print("=" * 60)
+    print()
+
     socketio.start_background_task(cleanup_stale_players)
     socketio.run(app, host="0.0.0.0", port=port, debug=True)

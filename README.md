@@ -56,19 +56,24 @@ That's it — you're in the world.
 
 ## Letting other people connect
 
-When the server is running, anyone on the **same Wi-Fi network** (e.g. classmates on the school Wi-Fi, or family members at home) can connect by typing your computer's local IP address into their browser, like this:
+When the server starts, it prints the URL other people should use, like this:
 
 ```
-http://192.168.1.42:5000
+============================================================
+  FreeLAD server starting
+============================================================
+  On this computer:     http://localhost:5000
+  Others on your Wi-Fi: http://192.168.1.42:5000
+------------------------------------------------------------
 ```
 
-…replacing `192.168.1.42` with **your** computer's local IP address. To find it:
+Just give your friends the **"Others on your Wi-Fi"** URL.
+
+If for some reason no LAN address gets detected, you can find it by hand:
 
 - **Windows:** Open Command Prompt and type `ipconfig`. Look for the line that says **IPv4 Address** under your active network adapter (usually "Wireless LAN adapter Wi-Fi").
 - **Mac:** Open Terminal and type `ipconfig getifaddr en0` (Wi-Fi) or `ipconfig getifaddr en1`.
-- **Linux:** Type `hostname -I` in a terminal.
-
-Tell your friends that URL. Make sure:
+- **Linux:** Type `hostname -I` in a terminal. Make sure:
 
 - They are on the **same network** as you (same Wi-Fi).
 - The first time you run the server, **Windows Firewall** may pop up asking whether to allow Python to accept incoming connections. Click **Allow access** (Private networks is enough). If you missed the popup, you can re-enable it under *Windows Defender Firewall → Allow an app through firewall*.
