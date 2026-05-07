@@ -2,7 +2,7 @@
 
 **FreeLAD** (Free Lightweight Architectural Display) is a multiplayer 3D virtual world you run on your own computer. Your friends or classmates connect with a web browser and you can all walk around together inside a shared scene built from STL models that anyone in the room can upload.
 
-It was built for a CAD class so students could explore each other's 3D models, but it also works great as a sandbox for collaborative scene-building or for the built-in **Capture the Flag** game mode (use student creations as obstacles, towers, and bases — it's a blast).
+It was built for a CAD class so students could explore each other's 3D models, but it also works great as a sandbox for collaborative scene-building or for the built-in game modes (use student creations as obstacles, towers, hiding spots, and bases — it's a blast).
 
 ## What you can do with it
 
@@ -10,9 +10,12 @@ It was built for a CAD class so students could explore each other's 3D models, b
 - Upload STL files and place, rotate, scale, and color them
 - See other players in real time with their names floating above them
 - Carry a flashlight, toggle fly mode, and chase each other around
-- Play **Capture the Flag** with auto team-balancing, scoring, and respawns
+- Play one of three built-in game modes:
+  - **Capture the Flag** — two teams, classic CTF with scoring and respawns
+  - **Race** — everyone sprints from a start point to a finish line; finishers get a personal time and the leaderboard pops up at the end
+  - **Hide and Seek** — one or more seekers vs. a pack of hiders. Hiders freeze once the countdown ends; tagged hiders convert to seekers. Last remaining hider wins.
 - Save the whole scene to a zip file and load it again later
-- An admin panel for the host to control lighting, movement speed, who can edit, and the CTF game
+- An admin panel for the host to control lighting, movement speed, who can edit, and run any of the games
 
 ---
 
@@ -152,10 +155,12 @@ In the start menu, type the admin password (default: `admin`) and click **Login*
 - **Allow editing / uploads:** lock down the world so only you can change it.
 - **Max upload size:** cap how big student-uploaded STLs can be.
 - **Teleport all here:** yank everyone to where you're standing.
-- **Save / Load / Clear scene:** save the whole world (models, lighting, CTF map) to a `.zip` file and reload it later.
+- **Save / Load / Clear scene:** save the whole world (models, lighting, CTF map, race start/finish, hide-and-seek start) to a `.zip` file and reload it later.
 - **Lighting:** ambient, sun, and sky color & intensity sliders.
 - **Movement:** scale walking speed and jump height for everyone.
-- **Game mode:** switch between Sandbox and Capture the Flag.
+- **Game mode:** switch between Sandbox, Capture the Flag, Race, and Hide and Seek.
+
+If the **Start** button for any game is greyed out, an orange hint next to it will tell you exactly what's missing (e.g. "Missing: red flag, blue spawn — press 1 (flag) and 2 (spawn) on each side").
 
 ### Capture the Flag
 
@@ -163,8 +168,32 @@ Switch to **Capture the Flag** mode in the admin panel. As an admin, walk to whe
 
 1. Use **Randomize teams** or **Teams by position** to assign players to red and blue.
 2. Click **Start game** — players are teleported to their spawns.
-3. Touch the enemy flag to pick it up; bring it back to your own flag to score.
+3. Touch the enemy flag to pick it up; bring it back to your own flag to score. Your own flag must be home for a capture to count — defending matters!
 4. Touch an enemy on your side of the world to tag them (mutual annihilation — both respawn).
+
+Anyone carrying a flag is highlighted with a tall glowing column in the carried flag's color (visible across the whole map) and an x-ray silhouette in their team's color (visible through walls), so defenders can intercept.
+
+### Race
+
+Switch to **Race** mode. Walk to the start line and press **1**, walk to the finish line and press **2** (green ring = start, gold ring = finish, both with a tall beam visible from far away). Then:
+
+1. Use **All to racing** / **All to spectator** plus the per-player **R** / **S** buttons in the player list to set who's racing.
+2. Click **Start race** — racers teleport to the start, freeze through a 5-second countdown, then "GO!".
+3. Touch the finish ring → personal HUD `"You finished 2nd! 14.32s"` and an entry in the public event log.
+4. When the last racer finishes (or admin clicks Stop), a centered **RACE RESULTS** leaderboard shows for 8 seconds before returning to pregame.
+
+The admin defaults to spectator (so they don't accidentally race themselves); they have to click their own **R** button to opt in.
+
+### Hide and Seek
+
+Switch to **Hide and Seek** mode. Place a single starting point with **1** — that's where everyone teleports when the game begins. Then:
+
+1. Click **Randomize (1 seeker)** to pick one random non-admin as the seeker and make everyone else a hider — or use the per-player **H** / **K** / **S** buttons to designate hiders, seeKers, and spectators manually. (You can have multiple seekers.)
+2. Click **Start game** — players teleport to the start, and a 30-second countdown begins. **Seekers' screens go black** while hiders run for hiding spots.
+3. When the countdown ends: hiders **freeze in place**, seekers can move and chase. Each tagged hider converts into a seeker, so the seeker pack grows.
+4. The last remaining hider wins. Their name appears in a HUD banner for everyone to see.
+
+To make hiders feel the tension, **seekers show up as red x-ray silhouettes through walls** to hiders and spectators (but not to other seekers). This lets a frozen hider watch the seeker pack approach — and decide whether to hold their breath or sprint to a new spot before the countdown ends.
 
 ---
 
