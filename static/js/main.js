@@ -1635,6 +1635,9 @@ function initNetwork() {
             case "flag_capture":
                 logEvent(`${actor} captured for ${team.toUpperCase()}!`, "success");
                 break;
+            case "capture_blocked":
+                showHudMessage("Your flag must be home to score!", { duration: 3000, variant: "warning" });
+                break;
             case "player_tagged":
                 logEvent(`${target} was tagged by ${actor}`, "warning");
                 break;

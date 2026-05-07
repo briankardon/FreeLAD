@@ -49,6 +49,11 @@ admin_settings = {
 # Game mode state: "sandbox" (default) or "ctf"
 game_mode = "sandbox"
 
+# Transient set of sids currently being warned that they can't capture
+# because their own flag isn't home. Not part of broadcast state — only used
+# server-side to avoid spamming the warning every tick.
+_capture_blocked_warned = set()
+
 # CTF state (used only when game_mode == "ctf")
 ctf_state = {
     "phase": "pregame",                       # "pregame" or "playing"
@@ -809,6 +814,7 @@ def distance(a, b):
 def clean_ctf_state_for_player(sid):
     """Remove a player from all CTF state: drop any held flag to home, clear team assignment.
     Call when a player disconnects or is evicted so we don't leave dangling references."""
+    _capture_blocked_warned.discard(sid)
     if game_mode != "ctf":
         return
     changed = False
@@ -892,18 +898,35 @@ def process_ctf_contacts(sid):
                 broadcast_game_state()
 
     # 3. Carrier touching own flag home: capture!
+    # Requires our own flag to currently be at home (not held, not dropped elsewhere).
     carrying_enemy = (ctf_state["flag_holder"][enemy_team] == sid)
     if carrying_enemy and own_flag_home:
         if distance(my_feet, own_flag_home) < CTF_FLAG_CONTACT_DIST:
-            ctf_state["scores"][my_team] += 1
-            socketio.emit("ctf_event", {"type": "flag_capture", "actor": sid, "team": my_team})
-            # Reset both flags to home
-            for t in ("red", "blue"):
-                if ctf_state["flag_home"][t]:
-                    ctf_state["flag_pos"][t] = list(ctf_state["flag_home"][t])
-                ctf_state["flag_holder"][t] = None
-            broadcast_game_state()
-            return  # no point checking contacts after capture
+            own_flag_at_home = (own_flag_holder is None and own_flag_pos is not None
+                                and distance(own_flag_pos, own_flag_home) < 0.1)
+            if own_flag_at_home:
+                ctf_state["scores"][my_team] += 1
+                socketio.emit("ctf_event", {"type": "flag_capture", "actor": sid, "team": my_team})
+                # Reset both flags to home
+                for t in ("red", "blue"):
+                    if ctf_state["flag_home"][t]:
+                        ctf_state["flag_pos"][t] = list(ctf_state["flag_home"][t])
+                    ctf_state["flag_holder"][t] = None
+                _capture_blocked_warned.discard(sid)
+                broadcast_game_state()
+                return  # no point checking contacts after capture
+            else:
+                # Carrier reached home but their own flag isn't there. Warn once
+                # per visit so they know they have to wait for it to be returned.
+                if sid not in _capture_blocked_warned:
+                    _capture_blocked_warned.add(sid)
+                    socketio.emit("ctf_event",
+                                  {"type": "capture_blocked", "actor": sid, "team": my_team},
+                                  to=sid)
+        else:
+            # Carrier moved away from home: clear the one-shot warning so they
+            # get re-notified if they come back and the flag is still missing.
+            _capture_blocked_warned.discard(sid)
 
     # If carrier is moving, keep flag position synced to them
     for t in ("red", "blue"):
@@ -1017,6 +1040,7 @@ def on_admin_ctf_start(data):
     for t in ("red", "blue"):
         ctf_state["flag_pos"][t] = list(ctf_state["flag_home"][t])
         ctf_state["flag_holder"][t] = None
+    _capture_blocked_warned.clear()
     # Teleport each assigned player to their team's spawn
     for psid, team in ctf_state["teams"].items():
         spawn = ctf_state["spawns"].get(team)
@@ -1050,6 +1074,7 @@ def on_admin_ctf_stop(data):
         if ctf_state["flag_home"][t]:
             ctf_state["flag_pos"][t] = list(ctf_state["flag_home"][t])
         ctf_state["flag_holder"][t] = None
+    _capture_blocked_warned.clear()
     broadcast_game_state()
     print(f"[ADMIN] CTF game stopped")
 
