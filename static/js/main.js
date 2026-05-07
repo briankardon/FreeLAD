@@ -1798,9 +1798,11 @@ function buildCarrierFx() {
     return group;
 }
 
-function setCarrierFxColor(carrierFx, hex) {
+function setCarrierFxColors(carrierFx, columnHex, silhouetteHex) {
     carrierFx.children.forEach((child) => {
-        if (child.material && child.material.color) child.material.color.set(hex);
+        if (!child.material || !child.material.color) return;
+        if (child.name === "carrierColumn") child.material.color.set(columnHex);
+        else child.material.color.set(silhouetteHex);
     });
 }
 
@@ -1937,9 +1939,13 @@ function syncHeldFlags() {
             if (rp) {
                 mesh.position.copy(rp.group.position);
                 if (rp.carrierFx) {
-                    // Color the FX in the *carried* flag's team color so a blue
-                    // player carrying the red flag glows red — easy to read at a glance.
-                    setCarrierFxColor(rp.carrierFx, teamColor(team));
+                    // Column shows the *carried* flag's color (so defenders read
+                    // "the BLUE flag is over there"), while the silhouette uses
+                    // the carrier's own team color (so you can still tell which
+                    // side they're on through walls).
+                    const carrierTeam = ctfState.teams[holder];
+                    const silhouetteColor = teamColor(carrierTeam) || rp.originalColor;
+                    setCarrierFxColors(rp.carrierFx, teamColor(team), silhouetteColor);
                 }
             }
         }
