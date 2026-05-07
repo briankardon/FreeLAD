@@ -936,12 +936,21 @@ function applyGameState(mode, ctf, race) {
     }
     // Race start button gated on having start AND end
     const raceStartBtn = document.getElementById("admin-race-start-btn");
+    const raceHint = document.getElementById("admin-race-hint");
     if (raceStartBtn) {
-        const haveEndpoints = raceActive && raceState.start && raceState.end;
-        raceStartBtn.disabled = !haveEndpoints;
-        raceStartBtn.title = raceStartBtn.disabled
-            ? "Place start (press 1) and end (press 2) first"
-            : "";
+        const haveStart = raceActive && raceState.start;
+        const haveEnd = raceActive && raceState.end;
+        raceStartBtn.disabled = !(haveStart && haveEnd);
+        let hint = "";
+        if (raceActive && !haveStart && !haveEnd) {
+            hint = "Press 1 at the start and 2 at the finish to place markers";
+        } else if (raceActive && !haveStart) {
+            hint = "Press 1 to place the start marker";
+        } else if (raceActive && !haveEnd) {
+            hint = "Press 2 to place the finish marker";
+        }
+        if (raceHint) raceHint.textContent = hint;
+        raceStartBtn.title = hint;
     }
 
     // Show/hide the race results overlay if we're in the finished phase
