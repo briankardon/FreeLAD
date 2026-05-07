@@ -98,6 +98,7 @@
                         <label><input type="radio" name="admin-mode" id="admin-mode-sandbox" value="sandbox" checked> Sandbox</label>
                         <label><input type="radio" name="admin-mode" id="admin-mode-ctf" value="ctf"> Capture the Flag</label>
                         <label><input type="radio" name="admin-mode" id="admin-mode-race" value="race"> Race</label>
+                        <label><input type="radio" name="admin-mode" id="admin-mode-hide" value="hide"> Hide and Seek</label>
                     </div>
                     <div class="admin-row" id="admin-ctf-team-row" style="display:none">
                         <button id="admin-ctf-randomize-btn">Randomize teams</button>
@@ -119,6 +120,17 @@
                         <button id="admin-race-stop-btn">Stop race</button>
                         <span id="admin-race-phase" class="dim"></span>
                         <span id="admin-race-hint" class="admin-hint"></span>
+                    </div>
+                    <div class="admin-row" id="admin-hide-role-row" style="display:none">
+                        <button id="admin-hide-randomize-btn">Randomize (1 seeker)</button>
+                        <button id="admin-hide-all-btn">All to hiders</button>
+                        <button id="admin-hide-clear-btn">All to spectator</button>
+                    </div>
+                    <div class="admin-row" id="admin-hide-game-row" style="display:none">
+                        <button id="admin-hide-start-btn">Start game</button>
+                        <button id="admin-hide-stop-btn">Stop game</button>
+                        <span id="admin-hide-phase" class="dim"></span>
+                        <span id="admin-hide-hint" class="admin-hint"></span>
                     </div>
                 </div>
             </div>
@@ -161,6 +173,10 @@
                     <p><kbd>1</kbd> Place start here</p>
                     <p><kbd>2</kbd> Place finish here</p>
                 </div>
+                <div class="col">
+                    <h3>Admin Hide&amp;Seek</h3>
+                    <p><kbd>1</kbd> Place start here</p>
+                </div>
             </div>
         </div>
     </div>
@@ -183,6 +199,13 @@
         <div id="race-results" style="display:none">
             <div id="race-results-header">RACE RESULTS</div>
             <ol id="race-results-list"></ol>
+        </div>
+        <div id="seeker-blackout" style="display:none">
+            <div id="seeker-blackout-text">
+                <div class="big">YOU ARE A SEEKER</div>
+                <div class="small">Hiders are running — wait until the countdown ends.</div>
+                <div class="big" id="seeker-blackout-countdown"></div>
+            </div>
         </div>
         <div id="team-indicator" style="display:none"></div>
         <div id="countdown-display" style="display:none"></div>

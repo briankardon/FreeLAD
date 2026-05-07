@@ -79,6 +79,22 @@ race_state = {
     "results_until_ts": None,   # while phase=="finished", show results until this wall-clock time
 }
 
+# Hide-and-seek state (used only when game_mode == "hide")
+# Phases: "pregame" -> "countdown" -> "playing" -> "finished" -> "pregame"
+# During countdown: seekers immobilized + black screen, hiders move freely.
+# During playing: hiders immobilized, seekers chase. Tagging a hider converts them to seeker.
+# Last remaining hider wins.
+hide_state = {
+    "phase": "pregame",
+    "roles": {},                # sid -> "hider" | "seeker" | "spectator" (default: hider for non-admins, spectator for admins)
+    "start": None,              # [x, y, z] start point everyone teleports to
+    "active_participants": [],  # sids that started as hider OR seeker (frozen at game start)
+    "winner_sid": None,         # set when phase becomes "finished" if a hider was the last standing
+    "winner_name": None,
+    "countdown_end_ts": None,
+    "results_until_ts": None,
+}
+
 
 def ctf_public_state():
     """CTF state safe to broadcast (no internal references)."""
@@ -100,6 +116,29 @@ def race_role_for(sid):
     if sid in race_state["roles"]:
         return race_state["roles"][sid]
     return "spectator" if sid in admin_sids else "racer"
+
+
+def hide_role_for(sid):
+    """Resolve a player's effective hide-and-seek role.
+    Admins default to spectator; everyone else defaults to hider until assigned."""
+    if sid in hide_state["roles"]:
+        return hide_state["roles"][sid]
+    return "spectator" if sid in admin_sids else "hider"
+
+
+def hide_public_state():
+    """Hide-and-seek state safe to broadcast."""
+    resolved_roles = {sid: hide_role_for(sid) for sid in players.keys()}
+    return {
+        "phase": hide_state["phase"],
+        "roles": resolved_roles,
+        "start": hide_state["start"],
+        "active_participants": list(hide_state["active_participants"]),
+        "winner_sid": hide_state.get("winner_sid"),
+        "winner_name": hide_state.get("winner_name"),
+        "countdown_end_ts": hide_state.get("countdown_end_ts"),
+        "results_until_ts": hide_state.get("results_until_ts"),
+    }
 
 
 def race_public_state():
@@ -126,6 +165,7 @@ def broadcast_game_state():
         "mode": game_mode,
         "ctf": ctf_public_state() if game_mode == "ctf" else None,
         "race": race_public_state() if game_mode == "race" else None,
+        "hide": hide_public_state() if game_mode == "hide" else None,
     })
 
 def meta_path(stl_filename):
@@ -182,6 +222,7 @@ load_existing_stls()
 
 CTF_MAP_FILE = os.path.join(STL_DIR, "ctf_map.json")
 RACE_MAP_FILE = os.path.join(STL_DIR, "race_map.json")
+HIDE_MAP_FILE = os.path.join(STL_DIR, "hide_map.json")
 
 
 def save_ctf_map():
@@ -239,8 +280,30 @@ def load_race_map():
     race_state["end"] = data.get("end")
 
 
+def save_hide_map():
+    """Persist the hide-and-seek start point to disk."""
+    data = {"start": hide_state["start"]}
+    try:
+        with open(HIDE_MAP_FILE, "w") as f:
+            json.dump(data, f, indent=2)
+    except OSError:
+        pass
+
+
+def load_hide_map():
+    if not os.path.exists(HIDE_MAP_FILE):
+        return
+    try:
+        with open(HIDE_MAP_FILE) as f:
+            data = json.load(f)
+    except (json.JSONDecodeError, OSError):
+        return
+    hide_state["start"] = data.get("start")
+
+
 load_ctf_map()
 load_race_map()
+load_hide_map()
 
 
 # Assign colors to players
@@ -267,7 +330,7 @@ def can_edit(sid):
     if is_admin(sid):
         return True
     # During an active game mode, only admins can edit
-    if game_mode in ("ctf", "race"):
+    if game_mode in ("ctf", "race", "hide"):
         return False
     return admin_settings["editing_enabled"]
 
@@ -286,6 +349,7 @@ def broadcast_admin_state(target_sid=None):
                 "name": p["name"],
                 "team": ctf_state["teams"].get(p["id"]),
                 "race_role": race_role_for(p["id"]),
+                "hide_role": hide_role_for(p["id"]),
             }
             for p in players.values()
         ],
@@ -315,7 +379,7 @@ def upload_stl():
     # Enforce upload lock for non-admins (always locked during an active game mode)
     uploader = request.form.get("uploader", "")
     if not is_admin(uploader):
-        if game_mode in ("ctf", "race"):
+        if game_mode in ("ctf", "race", "hide"):
             return jsonify({"error": f"Uploads disabled during {game_mode.upper()} mode"}), 403
         if not admin_settings["upload_enabled"]:
             return jsonify({"error": "Uploads are currently disabled"}), 403
@@ -476,10 +540,13 @@ def admin_load_scene():
     race_state["start"] = None
     race_state["end"] = None
     load_race_map()
+    # Same for hide map
+    hide_state["start"] = None
+    load_hide_map()
 
     # Broadcast full scene refresh to all clients
     socketio.emit("scene_reloaded", {"models": list(stl_models.values())})
-    if game_mode in ("ctf", "race"):
+    if game_mode in ("ctf", "race", "hide"):
         broadcast_game_state()
     broadcast_admin_state()
     print(f"[ADMIN] Scene loaded from uploaded zip ({len(stl_models)} models)")
@@ -514,6 +581,7 @@ def on_connect():
         "game_mode": game_mode,
         "ctf": ctf_public_state() if game_mode == "ctf" else None,
         "race": race_public_state() if game_mode == "race" else None,
+        "hide": hide_public_state() if game_mode == "hide" else None,
     })
 
     # Notify others
@@ -522,9 +590,9 @@ def on_connect():
 
     # Update admin panels with new player list
     broadcast_admin_state()
-    # In race mode, role lists default by membership, so re-broadcast so peers
+    # In race/hide mode, role lists default by membership, so re-broadcast so peers
     # see the new player's resolved role.
-    if game_mode == "race":
+    if game_mode in ("race", "hide"):
         broadcast_game_state()
 
 
@@ -535,11 +603,12 @@ def on_disconnect():
         print(f"[-] {players[sid]['name']} disconnected ({sid})")
         clean_ctf_state_for_player(sid)
         clean_race_state_for_player(sid)
+        clean_hide_state_for_player(sid)
         del players[sid]
         admin_sids.discard(sid)
         emit("player_left", {"id": sid}, broadcast=True)
         broadcast_admin_state()
-        if game_mode == "race":
+        if game_mode in ("race", "hide"):
             broadcast_game_state()
 
 
@@ -591,6 +660,8 @@ def on_player_update(data):
             process_ctf_contacts(sid)
         elif game_mode == "race" and race_state["phase"] == "running":
             process_race_finish(sid)
+        elif game_mode == "hide" and hide_state["phase"] == "playing":
+            process_hide_contacts(sid)
 
 
 @socketio.on("stl_transform")
@@ -786,7 +857,7 @@ def on_admin_set_mode(data):
     if not is_admin(sid):
         return
     new_mode = data.get("mode", "sandbox")
-    if new_mode not in ("sandbox", "ctf", "race"):
+    if new_mode not in ("sandbox", "ctf", "race", "hide"):
         return
     game_mode = new_mode
     if new_mode == "ctf":
@@ -810,6 +881,15 @@ def on_admin_set_mode(data):
         race_state["start_ts"] = None
         race_state["countdown_end_ts"] = None
         race_state["results_until_ts"] = None
+    elif new_mode == "hide":
+        # Reset live hide-and-seek gameplay; preserve the start point.
+        hide_state["phase"] = "pregame"
+        hide_state["roles"] = {}
+        hide_state["active_participants"] = []
+        hide_state["winner_sid"] = None
+        hide_state["winner_name"] = None
+        hide_state["countdown_end_ts"] = None
+        hide_state["results_until_ts"] = None
     broadcast_game_state()
     broadcast_admin_state()
     print(f"[ADMIN] Game mode set to {new_mode}")
@@ -1401,6 +1481,249 @@ def process_race_finish(sid):
         broadcast_game_state()
 
 
+# ============================================================
+# Hide-and-seek mode handlers
+# ============================================================
+
+HIDE_COUNTDOWN_SECONDS = 30
+HIDE_TAG_DIST = 1.6           # how close a seeker has to get to tag a hider
+HIDE_RESULTS_DURATION = 8.0   # seconds the win banner stays up
+
+
+def clean_hide_state_for_player(sid):
+    """Strip a disconnecting player from hide-and-seek state."""
+    if sid in hide_state["roles"]:
+        del hide_state["roles"][sid]
+    if sid in hide_state["active_participants"]:
+        hide_state["active_participants"].remove(sid)
+    if game_mode != "hide":
+        return
+    # If a participant disconnected mid-game, the win condition may have shifted.
+    if hide_state["phase"] == "playing":
+        check_hide_win()
+
+
+def _count_remaining_hiders():
+    """Number of original participants still classified as hiders."""
+    return sum(1 for s in hide_state["active_participants"]
+               if hide_role_for(s) == "hider")
+
+
+def check_hide_win():
+    """End the game if exactly one hider remains (winner) or zero (no winner)."""
+    if hide_state["phase"] != "playing":
+        return
+    remaining = [s for s in hide_state["active_participants"]
+                 if hide_role_for(s) == "hider"]
+    if len(remaining) <= 1:
+        winner_sid = remaining[0] if remaining else None
+        end_hide_game(winner_sid)
+
+
+def end_hide_game(winner_sid):
+    hide_state["phase"] = "finished"
+    hide_state["countdown_end_ts"] = None
+    hide_state["winner_sid"] = winner_sid
+    hide_state["winner_name"] = players[winner_sid]["name"] if (winner_sid and winner_sid in players) else None
+    hide_state["results_until_ts"] = time.time() + HIDE_RESULTS_DURATION
+    broadcast_game_state()
+    if winner_sid:
+        print(f"[ADMIN] Hide game ended; winner: {hide_state['winner_name']}")
+    else:
+        print(f"[ADMIN] Hide game ended with no winner")
+
+    def back_to_pregame():
+        socketio.sleep(HIDE_RESULTS_DURATION)
+        if hide_state["phase"] == "finished":
+            hide_state["phase"] = "pregame"
+            hide_state["results_until_ts"] = None
+            hide_state["active_participants"] = []
+            hide_state["winner_sid"] = None
+            hide_state["winner_name"] = None
+            broadcast_game_state()
+
+    socketio.start_background_task(back_to_pregame)
+
+
+@socketio.on("admin_hide_place_start")
+def on_admin_hide_place_start(data):
+    sid = request.sid
+    if not is_admin(sid) or game_mode != "hide":
+        return
+    pos = data.get("position")
+    if not pos or len(pos) != 3:
+        return
+    hide_state["start"] = list(pos)
+    save_hide_map()
+    broadcast_game_state()
+    print(f"[ADMIN] Placed hide-and-seek start at {pos}")
+
+
+@socketio.on("admin_hide_assign")
+def on_admin_hide_assign(data):
+    sid = request.sid
+    if not is_admin(sid) or game_mode != "hide":
+        return
+    target_sid = data.get("sid")
+    role = data.get("role")
+    if target_sid not in players:
+        return
+    if role in ("hider", "seeker", "spectator"):
+        hide_state["roles"][target_sid] = role
+    else:
+        hide_state["roles"].pop(target_sid, None)
+    # If we're mid-game, a role change could shift the win condition.
+    broadcast_game_state()
+    broadcast_admin_state()
+    if hide_state["phase"] == "playing":
+        check_hide_win()
+
+
+@socketio.on("admin_hide_all_hiders")
+def on_admin_hide_all_hiders(data):
+    sid = request.sid
+    if not is_admin(sid) or game_mode != "hide":
+        return
+    for psid in players.keys():
+        if psid in admin_sids:
+            hide_state["roles"][psid] = "spectator"
+        else:
+            hide_state["roles"][psid] = "hider"
+    broadcast_game_state()
+    broadcast_admin_state()
+
+
+@socketio.on("admin_hide_clear")
+def on_admin_hide_clear(data):
+    sid = request.sid
+    if not is_admin(sid) or game_mode != "hide":
+        return
+    for psid in players.keys():
+        hide_state["roles"][psid] = "spectator"
+    broadcast_game_state()
+    broadcast_admin_state()
+
+
+@socketio.on("admin_hide_randomize")
+def on_admin_hide_randomize(data):
+    """Pick exactly one random non-admin to be seeker; everyone else is a hider."""
+    import random
+    sid = request.sid
+    if not is_admin(sid) or game_mode != "hide":
+        return
+    candidates = [psid for psid in players.keys() if psid not in admin_sids]
+    if not candidates:
+        return
+    chosen = random.choice(candidates)
+    for psid in players.keys():
+        if psid in admin_sids:
+            hide_state["roles"][psid] = "spectator"
+        elif psid == chosen:
+            hide_state["roles"][psid] = "seeker"
+        else:
+            hide_state["roles"][psid] = "hider"
+    broadcast_game_state()
+    broadcast_admin_state()
+    print(f"[ADMIN] Randomized hide-and-seek roles; seeker: {players[chosen]['name']}")
+
+
+@socketio.on("admin_hide_start")
+def on_admin_hide_start(data):
+    sid = request.sid
+    if not is_admin(sid) or game_mode != "hide":
+        return
+    if not hide_state["start"]:
+        emit("admin_ctf_error", {"message": "Place a start point (key 1) before starting."})
+        return
+    hiders = [psid for psid in players.keys() if hide_role_for(psid) == "hider"]
+    seekers = [psid for psid in players.keys() if hide_role_for(psid) == "seeker"]
+    if len(seekers) < 1:
+        emit("admin_ctf_error", {"message": "Need at least one seeker. Use 'Randomize' or assign manually."})
+        return
+    if len(hiders) < 2:
+        emit("admin_ctf_error", {"message": "Need at least two hiders for the game to be winnable."})
+        return
+
+    hide_state["phase"] = "countdown"
+    hide_state["countdown_end_ts"] = time.time() + HIDE_COUNTDOWN_SECONDS
+    hide_state["active_participants"] = list(hiders) + list(seekers)
+    hide_state["winner_sid"] = None
+    hide_state["winner_name"] = None
+    hide_state["results_until_ts"] = None
+
+    # Teleport every participant to the start point
+    for psid in hide_state["active_participants"]:
+        socketio.emit("teleport", {"position": list(hide_state["start"])}, to=psid)
+
+    broadcast_game_state()
+    print(f"[ADMIN] Hide-and-seek countdown ({len(hiders)} hider(s), {len(seekers)} seeker(s))")
+
+    def transition_to_playing():
+        socketio.sleep(HIDE_COUNTDOWN_SECONDS)
+        if hide_state["phase"] != "countdown":
+            return
+        hide_state["phase"] = "playing"
+        hide_state["countdown_end_ts"] = None
+        broadcast_game_state()
+        print(f"[ADMIN] Hide-and-seek now playing")
+
+    socketio.start_background_task(transition_to_playing)
+
+
+@socketio.on("admin_hide_stop")
+def on_admin_hide_stop(data):
+    sid = request.sid
+    if not is_admin(sid) or game_mode != "hide":
+        return
+    if hide_state["phase"] in ("countdown", "playing"):
+        end_hide_game(winner_sid=None)
+    else:
+        hide_state["phase"] = "pregame"
+        hide_state["countdown_end_ts"] = None
+        hide_state["results_until_ts"] = None
+        hide_state["active_participants"] = []
+        hide_state["winner_sid"] = None
+        hide_state["winner_name"] = None
+        broadcast_game_state()
+    print(f"[ADMIN] Hide-and-seek stop requested")
+
+
+def process_hide_contacts(sid):
+    """Called from on_player_update during phase=='playing'. Seekers tag hiders by touching them."""
+    if hide_role_for(sid) != "seeker":
+        return
+    if sid not in players:
+        return
+    seeker_pos = players[sid]["position"]
+    seeker_feet = [seeker_pos[0], seeker_pos[1] - 1.6, seeker_pos[2]]
+    tagged_any = False
+    for hsid in list(hide_state["active_participants"]):
+        if hsid == sid:
+            continue
+        if hide_role_for(hsid) != "hider":
+            continue
+        if hsid not in players:
+            continue
+        h_pos = players[hsid]["position"]
+        h_feet = [h_pos[0], h_pos[1] - 1.6, h_pos[2]]
+        if distance(seeker_feet, h_feet) < HIDE_TAG_DIST:
+            hide_state["roles"][hsid] = "seeker"
+            socketio.emit("hide_event", {
+                "type": "tagged",
+                "actor_sid": sid,
+                "target_sid": hsid,
+                "actor_name": players[sid]["name"],
+                "target_name": players[hsid]["name"],
+            })
+            tagged_any = True
+    if tagged_any:
+        # Check if game is over; broadcast in either case.
+        check_hide_win()
+        if hide_state["phase"] == "playing":
+            broadcast_game_state()
+            broadcast_admin_state()
+
+
 STALE_PLAYER_TIMEOUT = 30   # seconds without heartbeat/update before eviction
 CLEANUP_INTERVAL      = 10  # seconds between cleanup passes
 
@@ -1418,12 +1741,13 @@ def cleanup_stale_players():
             print(f"[-] {players[sid]['name']} evicted (stale for {now - players[sid]['last_seen_ts']:.0f}s)")
             clean_ctf_state_for_player(sid)
             clean_race_state_for_player(sid)
+            clean_hide_state_for_player(sid)
             del players[sid]
             admin_sids.discard(sid)
             socketio.emit("player_left", {"id": sid})
         if stale:
             broadcast_admin_state()
-            if game_mode == "race":
+            if game_mode in ("race", "hide"):
                 broadcast_game_state()
 
 

@@ -41,6 +41,8 @@ const ctfMarkers = {
 let raceState = null;
 const raceMarkers = { start: null, end: null };
 let _raceResultsHideAt = 0;
+let hideState = null;
+const hideMarkers = { start: null };
 
 // Camera rotation (tracked as plain numbers to avoid Euler extraction instability)
 let cameraYaw = 0;
@@ -291,6 +293,10 @@ function onKeyDown(e) {
                 const p = camera.position.clone();
                 p.y -= EYE_HEIGHT - 0.2;
                 socket.emit("admin_race_place_start", { position: [p.x, p.y, p.z] });
+            } else if (isAdmin && gameMode === "hide") {
+                const p = camera.position.clone();
+                p.y -= EYE_HEIGHT - 0.2;
+                socket.emit("admin_hide_place_start", { position: [p.x, p.y, p.z] });
             }
             break;
         case "Digit2":
@@ -443,7 +449,7 @@ function transformSelectedModel(keyCode, fine) {
 function canEdit() {
     if (isAdmin) return true;
     // Non-admins can never edit during an active game mode
-    if (gameMode === "ctf" || gameMode === "race") return false;
+    if (gameMode === "ctf" || gameMode === "race" || gameMode === "hide") return false;
     return editingEnabled;
 }
 
@@ -456,6 +462,12 @@ function isPlayerImmobilized() {
     if (gameMode === "race" && raceState && raceState.phase === "countdown") {
         return raceState.roles && raceState.roles[myId] === "racer";
     }
+    if (gameMode === "hide" && hideState) {
+        const role = hideState.roles && hideState.roles[myId];
+        // During countdown: seekers locked. During playing: hiders locked.
+        if (hideState.phase === "countdown" && role === "seeker") return true;
+        if (hideState.phase === "playing" && role === "hider") return true;
+    }
     return false;
 }
 
@@ -466,6 +478,14 @@ function canUseFlyClip() {
         // Racers can't fly/clip during countdown or running; spectators always can
         const role = raceState.roles && raceState.roles[myId];
         if (role === "racer" && (raceState.phase === "countdown" || raceState.phase === "running")) {
+            return false;
+        }
+    }
+    if (gameMode === "hide" && hideState) {
+        // Hiders/seekers can't fly/clip during an active game; spectators always can
+        const role = hideState.roles && hideState.roles[myId];
+        if ((role === "hider" || role === "seeker")
+            && (hideState.phase === "countdown" || hideState.phase === "playing")) {
             return false;
         }
     }
@@ -582,6 +602,21 @@ function updateTeamIndicator() {
                 el.textContent = "RACER";
                 el.className = "race-racer";
             }
+        } else {
+            el.textContent = "SPECTATOR";
+            el.className = "team-spectator";
+        }
+        el.style.display = "";
+        return;
+    }
+    if (gameMode === "hide" && hideState) {
+        const role = hideState.roles && hideState.roles[myId];
+        if (role === "hider") {
+            el.textContent = "HIDER";
+            el.className = "hide-hider";
+        } else if (role === "seeker") {
+            el.textContent = "SEEKER";
+            el.className = "hide-seeker";
         } else {
             el.textContent = "SPECTATOR";
             el.className = "team-spectator";
@@ -769,6 +804,24 @@ function initAdminUI() {
     const raceStopBtn = document.getElementById("admin-race-stop-btn");
     if (raceStopBtn) raceStopBtn.addEventListener("click", () => socket.emit("admin_race_stop", {}));
 
+    // Hide-and-seek mode controls
+    const hideRadio = document.getElementById("admin-mode-hide");
+    if (hideRadio) {
+        hideRadio.addEventListener("change", (e) => {
+            if (e.target.checked) socket.emit("admin_set_mode", { mode: "hide" });
+        });
+    }
+    const hideRandBtn = document.getElementById("admin-hide-randomize-btn");
+    if (hideRandBtn) hideRandBtn.addEventListener("click", () => socket.emit("admin_hide_randomize", {}));
+    const hideAllBtn = document.getElementById("admin-hide-all-btn");
+    if (hideAllBtn) hideAllBtn.addEventListener("click", () => socket.emit("admin_hide_all_hiders", {}));
+    const hideClearBtn = document.getElementById("admin-hide-clear-btn");
+    if (hideClearBtn) hideClearBtn.addEventListener("click", () => socket.emit("admin_hide_clear", {}));
+    const hideStartBtn = document.getElementById("admin-hide-start-btn");
+    if (hideStartBtn) hideStartBtn.addEventListener("click", () => socket.emit("admin_hide_start", {}));
+    const hideStopBtn = document.getElementById("admin-hide-stop-btn");
+    if (hideStopBtn) hideStopBtn.addEventListener("click", () => socket.emit("admin_hide_stop", {}));
+
     // Prevent blocker click-through on admin panel inputs
     document.getElementById("admin-panel").addEventListener("click", (e) => e.stopPropagation());
     document.getElementById("admin-login").addEventListener("click", (e) => e.stopPropagation());
@@ -787,12 +840,16 @@ let _prevCtfPhase = null;
 let _prevCtfScores = null;
 let _prevCtfTeams = null;
 let _prevRacePhase = null;
+let _prevHidePhase = null;
+let _prevHideRoles = null;
 
-function applyGameState(mode, ctf, race) {
+function applyGameState(mode, ctf, race, hide) {
     const prevMode = gameMode;
     const prevPhase = _prevCtfPhase;
     const prevScores = _prevCtfScores;
     const prevRacePhase = _prevRacePhase;
+    const prevHidePhase = _prevHidePhase;
+    const prevHideRoles = _prevHideRoles;
 
     // Clear any STL selection when the mode changes (active modes disallow
     // editing for non-admins, and a stale highlighted model would be un-clearable)
@@ -804,10 +861,13 @@ function applyGameState(mode, ctf, race) {
     gameMode = mode;
     ctfState = ctf;
     raceState = race;
+    hideState = hide;
     _prevCtfPhase  = ctf ? ctf.phase : null;
     _prevCtfScores = ctf ? { ...ctf.scores } : null;
     _prevCtfTeams  = ctf ? { ...ctf.teams } : null;
     _prevRacePhase = race ? race.phase : null;
+    _prevHidePhase = hide ? hide.phase : null;
+    _prevHideRoles = hide ? { ...hide.roles } : null;
 
     // Force off fly/clip when a non-admin team player enters a locked phase
     if (!canUseFlyClip() && (flyMode || clipMode)) {
@@ -869,8 +929,48 @@ function applyGameState(mode, ctf, race) {
         }
     }
 
+    // Hide-and-seek phase announcements
+    if (hide && prevHidePhase !== hide.phase) {
+        const myRole = hide.roles && hide.roles[myId];
+        if (hide.phase === "countdown") {
+            if (myRole === "hider") {
+                showHudMessage("HIDE! Seekers will be released when the countdown ends.",
+                               { duration: 4000, variant: "success" });
+            } else if (myRole === "seeker") {
+                showHudMessage("You are a SEEKER. Wait...",
+                               { duration: 4000, variant: "warning" });
+            }
+        } else if (hide.phase === "playing") {
+            if (myRole === "seeker") {
+                showHudMessage("GO! Find the hiders.", { duration: 2500, variant: "success" });
+            } else if (myRole === "hider") {
+                showHudMessage("FREEZE! Don't get tagged.", { duration: 2500, variant: "warning" });
+            }
+        } else if (hide.phase === "finished") {
+            const winnerName = hide.winner_name;
+            if (winnerName) {
+                showHudMessage(`${winnerName} wins!`, { duration: 6000, variant: "success" });
+            } else {
+                showHudMessage("Game over — no winner.", { duration: 4000, variant: "warning" });
+            }
+        } else if (hide.phase === "pregame"
+                   && (prevHidePhase === "playing" || prevHidePhase === "countdown" || prevHidePhase === "finished")) {
+            // returned to lobby
+        }
+    }
+    // Notify *me* if I just got tagged (role changed from hider to seeker mid-game)
+    if (hide && prevHideRoles && hide.phase === "playing") {
+        const wasMine = prevHideRoles[myId];
+        const nowMine = hide.roles ? hide.roles[myId] : null;
+        if (wasMine === "hider" && nowMine === "seeker") {
+            showHudMessage("You were tagged! You're a seeker now.",
+                           { duration: 3500, variant: "warning" });
+        }
+    }
+
     const ctfActive = (mode === "ctf");
     const raceActive = (mode === "race");
+    const hideActive = (mode === "hide");
     sandboxGround.visible = !ctfActive;
     ctfGroundBlue.visible = ctfActive;
     ctfGroundRed.visible = ctfActive;
@@ -879,14 +979,17 @@ function applyGameState(mode, ctf, race) {
     // Update CTF flag and spawn markers
     refreshCTFMarkers();
     refreshRaceMarkers();
+    refreshHideMarkers();
     // Sync admin panel radios
     const sandboxRadio = document.getElementById("admin-mode-sandbox");
     const ctfRadio = document.getElementById("admin-mode-ctf");
     const raceRadio = document.getElementById("admin-mode-race");
+    const hideRadio = document.getElementById("admin-mode-hide");
     if (sandboxRadio && ctfRadio) {
-        sandboxRadio.checked = !ctfActive && !raceActive;
+        sandboxRadio.checked = !ctfActive && !raceActive && !hideActive;
         ctfRadio.checked = ctfActive;
         if (raceRadio) raceRadio.checked = raceActive;
+        if (hideRadio) hideRadio.checked = hideActive;
     }
     const teamRow = document.getElementById("admin-ctf-team-row");
     if (teamRow) teamRow.style.display = ctfActive ? "" : "none";
@@ -904,6 +1007,15 @@ function applyGameState(mode, ctf, race) {
     if (raceActive) {
         const racePhaseEl = document.getElementById("admin-race-phase");
         if (racePhaseEl) racePhaseEl.textContent = `Phase: ${raceState.phase}`;
+    }
+    // Hide-and-seek admin-row visibility
+    const hideRoleRow = document.getElementById("admin-hide-role-row");
+    if (hideRoleRow) hideRoleRow.style.display = hideActive ? "" : "none";
+    const hideGameRow = document.getElementById("admin-hide-game-row");
+    if (hideGameRow) hideGameRow.style.display = hideActive ? "" : "none";
+    if (hideActive) {
+        const hidePhaseEl = document.getElementById("admin-hide-phase");
+        if (hidePhaseEl) hidePhaseEl.textContent = `Phase: ${hideState.phase}`;
     }
 
     // Scoreboard + team indicator
@@ -961,12 +1073,39 @@ function applyGameState(mode, ctf, race) {
         raceStartBtn.title = hint;
     }
 
+    // Hide-and-seek start button gated on having start point + at least 1 seeker + 2 hiders
+    const hideStartBtn = document.getElementById("admin-hide-start-btn");
+    const hideHint = document.getElementById("admin-hide-hint");
+    if (hideStartBtn) {
+        let hint = "";
+        let blocked = !hideActive;
+        if (hideActive) {
+            const roles = (hide && hide.roles) || {};
+            const hiderCount = Object.values(roles).filter((r) => r === "hider").length;
+            const seekerCount = Object.values(roles).filter((r) => r === "seeker").length;
+            const reasons = [];
+            if (!hide.start) reasons.push("place start (key 1)");
+            if (seekerCount < 1) reasons.push("need ≥1 seeker");
+            if (hiderCount < 2) reasons.push("need ≥2 hiders");
+            if (reasons.length) {
+                hint = "Need: " + reasons.join(", ");
+                blocked = true;
+            }
+        }
+        hideStartBtn.disabled = blocked;
+        if (hideHint) hideHint.textContent = hint;
+        hideStartBtn.title = hint;
+    }
+
     // Show/hide the race results overlay if we're in the finished phase
     if (raceActive && race && race.phase === "finished" && race.results_until_ts) {
         showRaceResults(race);
     } else if (!raceActive || !race || race.phase !== "finished") {
         hideRaceResults();
     }
+
+    // Hide-and-seek seeker blackout overlay
+    updateSeekerBlackout();
 
     updateUploadVisibility(uploadEnabled);
     updateModeIndicators();
@@ -1145,6 +1284,59 @@ function showRaceResults(race) {
 function hideRaceResults() {
     const panel = document.getElementById("race-results");
     if (panel) panel.style.display = "none";
+}
+
+function buildHideStartMarker() {
+    // Purple ring + beam to mark the hide-and-seek start point
+    const color = "#a855f7";
+    const group = new THREE.Group();
+    const ringMat = new THREE.MeshBasicMaterial({
+        color, transparent: true, opacity: 0.7, side: THREE.DoubleSide,
+    });
+    const ring = new THREE.Mesh(new THREE.RingGeometry(1.4, 1.7, 32), ringMat);
+    ring.rotation.x = -Math.PI / 2;
+    ring.position.y = 0.03;
+    group.add(ring);
+    const beamMat = new THREE.MeshBasicMaterial({
+        color, transparent: true, opacity: 0.25, blending: THREE.AdditiveBlending,
+    });
+    const beam = new THREE.Mesh(new THREE.CylinderGeometry(1.5, 1.5, 50, 16, 1, true), beamMat);
+    beam.position.y = 25;
+    group.add(beam);
+    return group;
+}
+
+function refreshHideMarkers() {
+    const active = (gameMode === "hide") && hideState;
+    const wantStart = active && hideState.start;
+    if (wantStart) {
+        if (!hideMarkers.start) {
+            hideMarkers.start = buildHideStartMarker();
+            scene.add(hideMarkers.start);
+        }
+        hideMarkers.start.position.fromArray(hideState.start);
+    } else {
+        disposeMarker(hideMarkers.start);
+        hideMarkers.start = null;
+    }
+}
+
+function updateSeekerBlackout() {
+    const overlay = document.getElementById("seeker-blackout");
+    if (!overlay) return;
+    let show = false;
+    if (gameMode === "hide" && hideState && hideState.phase === "countdown") {
+        const role = hideState.roles && hideState.roles[myId];
+        if (role === "seeker") show = true;
+    }
+    overlay.style.display = show ? "" : "none";
+    if (show) {
+        const countdownEl = document.getElementById("seeker-blackout-countdown");
+        if (countdownEl && hideState.countdown_end_ts) {
+            const remaining = Math.max(0, Math.ceil(hideState.countdown_end_ts - Date.now() / 1000));
+            countdownEl.textContent = remaining > 0 ? remaining : "";
+        }
+    }
 }
 
 function refreshCTFMarkers() {
@@ -1351,6 +1543,26 @@ function updateAdminPanel(data) {
                 btn.addEventListener("click", (e) => {
                     e.stopPropagation();
                     socket.emit("admin_race_assign", { sid: player.id, role });
+                });
+                btnGroup.appendChild(btn);
+            }
+            li.appendChild(btnGroup);
+        } else if (data.game_mode === "hide") {
+            // Hide-and-seek role buttons (Hider / seeKer / Spectator)
+            const btnGroup = document.createElement("span");
+            btnGroup.className = "team-btn-group";
+            for (const [label, role, btnClass, tip] of [
+                ["H", "hider", "hide-hider-btn", "Set as hider"],
+                ["K", "seeker", "hide-seeker-btn", "Set as seeker"],
+                ["S", "spectator", "team-gray", "Set as spectator"],
+            ]) {
+                const btn = document.createElement("button");
+                btn.textContent = label;
+                btn.className = "team-btn " + btnClass + (player.hide_role === role ? " active" : "");
+                btn.title = tip;
+                btn.addEventListener("click", (e) => {
+                    e.stopPropagation();
+                    socket.emit("admin_hide_assign", { sid: player.id, role });
                 });
                 btnGroup.appendChild(btn);
             }
@@ -1722,7 +1934,7 @@ function initNetwork() {
         updateUploadVisibility(uploadEnabled);
         if (data.lighting) applyLighting(data.lighting);
         applyMovementSettings(data.movement_mult ?? 1.0, data.jump_mult ?? 1.0);
-        applyGameState(data.game_mode || "sandbox", data.ctf || null, data.race || null);
+        applyGameState(data.game_mode || "sandbox", data.ctf || null, data.race || null, data.hide || null);
         updateModeIndicators();
         updatePlayerCount();
     });
@@ -1854,7 +2066,21 @@ function initNetwork() {
     });
 
     socket.on("game_state", (data) => {
-        applyGameState(data.mode || "sandbox", data.ctf || null, data.race || null);
+        applyGameState(data.mode || "sandbox", data.ctf || null, data.race || null, data.hide || null);
+    });
+
+    socket.on("hide_event", (ev) => {
+        if (ev.type === "tagged") {
+            logEvent(`${ev.actor_name} tagged ${ev.target_name}`, "warning");
+            if (ev.actor_sid === myId) {
+                showHudMessage(`You tagged ${ev.target_name}!`,
+                               { duration: 2500, variant: "success" });
+            } else if (ev.target_sid !== myId) {
+                // The target gets their own "you were tagged" via applyGameState role diff
+                showHudMessage(`${ev.target_name} was tagged!`,
+                               { duration: 2200, variant: "warning" });
+            }
+        }
     });
 
     socket.on("race_event", (ev) => {
@@ -1989,6 +2215,12 @@ function addRemotePlayer(playerData) {
     carrierFx.visible = false;
     group.add(carrierFx);
 
+    // Seeker FX: x-ray silhouette in red, shown to hiders/spectators during
+    // hide-and-seek so they can see seekers approaching through walls.
+    const seekerFx = buildSeekerFx();
+    seekerFx.visible = false;
+    group.add(seekerFx);
+
     if (playerData.position) {
         group.position.fromArray(playerData.position);
         group.position.y -= EYE_HEIGHT;
@@ -2003,9 +2235,32 @@ function addRemotePlayer(playerData) {
         targetDir: new THREE.Vector3(0, 0, -1),
         originalColor: playerData.color,
         carrierFx,
+        seekerFx,
     };
     remotePlayers.set(playerData.id, rp);
     applyRemoteDisplay(rp, playerData.id);
+}
+
+function buildSeekerFx() {
+    // Red x-ray silhouette of body + head, visible through walls. No column —
+    // we don't want every seeker shooting a beam into the sky.
+    const group = new THREE.Group();
+    const xrayMat = new THREE.MeshBasicMaterial({
+        color: 0xe74c3c,
+        transparent: true,
+        opacity: 0.45,
+        depthTest: false,
+    });
+    const body = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.28, 1.0, 8), xrayMat);
+    body.position.y = 0.7;
+    body.renderOrder = 998;
+    group.add(body);
+    const head = new THREE.Mesh(new THREE.SphereGeometry(0.23, 8, 8), xrayMat.clone());
+    head.position.y = 1.4;
+    head.renderOrder = 998;
+    head.material.depthTest = false;
+    group.add(head);
+    return group;
 }
 
 function buildCarrierFx() {
@@ -2150,6 +2405,28 @@ function setFlagXray(flagMesh, on) {
     });
 }
 
+function syncSeekerFx() {
+    // In hide-and-seek, hiders and spectators see seekers as red silhouettes
+    // through walls (so they can track approaching danger). Seekers don't see
+    // each other through walls — they need to use line of sight to find each
+    // other-players (mostly hiders) like normal.
+    const isHideActive = (gameMode === "hide") && hideState
+        && (hideState.phase === "countdown" || hideState.phase === "playing");
+    if (!isHideActive) {
+        for (const [, rp] of remotePlayers) {
+            if (rp.seekerFx) rp.seekerFx.visible = false;
+        }
+        return;
+    }
+    const myRole = hideState.roles && hideState.roles[myId];
+    const viewerCanSeeSeekers = (myRole === "hider" || myRole === "spectator" || !myRole);
+    for (const [id, rp] of remotePlayers) {
+        if (!rp.seekerFx) continue;
+        const theirRole = hideState.roles && hideState.roles[id];
+        rp.seekerFx.visible = viewerCanSeeSeekers && theirRole === "seeker";
+    }
+}
+
 function syncHeldFlags() {
     // Position flag meshes to their holder's current rendered position each frame.
     // Also drives the carrier FX (glow column + x-ray silhouette) on remote players.
@@ -2239,7 +2516,9 @@ function animate() {
     updatePlayer(delta);
     interpolateRemotePlayers(delta);
     updateCountdownDisplay();
+    updateSeekerBlackout();
     syncHeldFlags();
+    syncSeekerFx();
 
     networkTimer += delta;
     if (networkTimer >= NETWORK_UPDATE_RATE) {

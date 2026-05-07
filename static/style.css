@@ -771,6 +771,68 @@ kbd {
     box-shadow: 0 0 0 1px #bbf7d0;
 }
 
+/* Hide-and-seek role admin buttons */
+.team-btn.hide-hider-btn:hover {
+    background: rgba(168, 85, 247, 0.25) !important;
+    color: #d8b4fe !important;
+}
+.team-btn.active.hide-hider-btn {
+    background: #a855f7 !important;
+    color: #2e1065 !important;
+    border-color: #e9d5ff !important;
+    box-shadow: 0 0 0 1px #e9d5ff;
+}
+.team-btn.hide-seeker-btn:hover {
+    background: rgba(231, 76, 60, 0.25) !important;
+    color: #f1948a !important;
+}
+.team-btn.active.hide-seeker-btn {
+    background: #e74c3c !important;
+    color: #fff !important;
+    border-color: #ffb0b0 !important;
+    box-shadow: 0 0 0 1px #ffb0b0;
+}
+
+/* Hide-and-seek team-indicator variants */
+#team-indicator.hide-hider {
+    background: rgba(168, 85, 247, 0.2);
+    color: #d8b4fe;
+    border-color: #a855f7;
+}
+#team-indicator.hide-seeker {
+    background: rgba(231, 76, 60, 0.2);
+    color: #f1948a;
+    border-color: #e74c3c;
+}
+
+/* Seeker blackout overlay (covers screen during hide-and-seek countdown) */
+#seeker-blackout {
+    position: fixed;
+    inset: 0;
+    background: #000;
+    z-index: 100;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+}
+#seeker-blackout-text {
+    text-align: center;
+    color: #f1948a;
+}
+#seeker-blackout-text .big {
+    font-size: 48px;
+    font-weight: bold;
+    letter-spacing: 6px;
+    margin-bottom: 12px;
+    text-shadow: 0 0 20px rgba(231, 76, 60, 0.4);
+}
+#seeker-blackout-text .small {
+    font-size: 16px;
+    color: #999;
+    letter-spacing: 1px;
+}
+
 #event-log {
     position: absolute;
     top: 44px;
