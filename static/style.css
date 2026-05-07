@@ -678,6 +678,88 @@ kbd {
 #hud-message.warning { color: #ffa726; }
 #hud-message.success { color: #2ecc71; }
 
+/* Race team-indicator variants */
+#team-indicator.race-racer {
+    background: rgba(34, 197, 94, 0.2);
+    color: #4ade80;
+    border-color: #22c55e;
+}
+#team-indicator.race-finished {
+    background: rgba(245, 158, 11, 0.2);
+    color: #fbbf24;
+    border-color: #f59e0b;
+}
+
+/* Race results overlay */
+#race-results {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    min-width: 380px;
+    max-width: 60%;
+    padding: 24px 32px;
+    background: rgba(0, 0, 0, 0.85);
+    color: #fff;
+    border: 2px solid #f59e0b;
+    border-radius: 12px;
+    box-shadow: 0 0 40px rgba(245, 158, 11, 0.45);
+    pointer-events: none;
+}
+#race-results-header {
+    text-align: center;
+    font-size: 28px;
+    font-weight: bold;
+    letter-spacing: 4px;
+    color: #fbbf24;
+    margin-bottom: 16px;
+}
+#race-results-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+#race-results-list li {
+    display: grid;
+    grid-template-columns: 60px 1fr auto;
+    align-items: baseline;
+    padding: 6px 12px;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 6px;
+    font-size: 18px;
+}
+#race-results-list .race-result-place {
+    font-weight: bold;
+    color: #fbbf24;
+}
+#race-results-list .race-result-name {
+    font-weight: 600;
+}
+#race-results-list .race-result-time {
+    font-family: monospace;
+    color: #cbd5e1;
+}
+#race-results-list .race-result-empty {
+    grid-template-columns: 1fr;
+    text-align: center;
+    color: #94a3b8;
+    font-style: italic;
+}
+
+/* Race role admin button */
+.team-btn.race-racer-btn {
+    background: rgba(34, 197, 94, 0.2);
+    color: #4ade80;
+    border-color: #22c55e;
+}
+.team-btn.race-racer-btn.active {
+    background: #22c55e;
+    color: #052e16;
+}
+
 #event-log {
     position: absolute;
     top: 44px;

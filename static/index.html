@@ -97,6 +97,7 @@
                     <div class="admin-row">
                         <label><input type="radio" name="admin-mode" id="admin-mode-sandbox" value="sandbox" checked> Sandbox</label>
                         <label><input type="radio" name="admin-mode" id="admin-mode-ctf" value="ctf"> Capture the Flag</label>
+                        <label><input type="radio" name="admin-mode" id="admin-mode-race" value="race"> Race</label>
                     </div>
                     <div class="admin-row" id="admin-ctf-team-row" style="display:none">
                         <button id="admin-ctf-randomize-btn">Randomize teams</button>
@@ -107,6 +108,15 @@
                         <button id="admin-ctf-start-btn">Start game</button>
                         <button id="admin-ctf-stop-btn">Stop game</button>
                         <span id="admin-ctf-phase" class="dim"></span>
+                    </div>
+                    <div class="admin-row" id="admin-race-role-row" style="display:none">
+                        <button id="admin-race-all-btn">All to racing</button>
+                        <button id="admin-race-clear-btn">All to spectator</button>
+                    </div>
+                    <div class="admin-row" id="admin-race-game-row" style="display:none">
+                        <button id="admin-race-start-btn">Start race</button>
+                        <button id="admin-race-stop-btn">Stop race</button>
+                        <span id="admin-race-phase" class="dim"></span>
                     </div>
                 </div>
             </div>
@@ -144,6 +154,11 @@
                     <p><kbd>2</kbd> Place spawn here</p>
                     <p class="dim">(side based on your X pos)</p>
                 </div>
+                <div class="col">
+                    <h3>Admin Race</h3>
+                    <p><kbd>1</kbd> Place start here</p>
+                    <p><kbd>2</kbd> Place finish here</p>
+                </div>
             </div>
         </div>
     </div>
@@ -163,6 +178,10 @@
             <span class="scoreboard-team scoreboard-red">RED <span id="score-red">0</span></span>
         </div>
         <div id="flag-banner" style="display:none">YOU HAVE THE FLAG</div>
+        <div id="race-results" style="display:none">
+            <div id="race-results-header">RACE RESULTS</div>
+            <ol id="race-results-list"></ol>
+        </div>
         <div id="team-indicator" style="display:none"></div>
         <div id="countdown-display" style="display:none"></div>
         <div id="hud-message" style="display:none"></div>

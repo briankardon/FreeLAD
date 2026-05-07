@@ -38,6 +38,9 @@ const ctfMarkers = {
     red: { flag: null, flagHome: null, spawn: null },
     blue: { flag: null, flagHome: null, spawn: null },
 };
+let raceState = null;
+const raceMarkers = { start: null, end: null };
+let _raceResultsHideAt = 0;
 
 // Camera rotation (tracked as plain numbers to avoid Euler extraction instability)
 let cameraYaw = 0;
@@ -278,12 +281,16 @@ function onKeyDown(e) {
             updateModeIndicators();
             break;
 
-        // --- Admin CTF placement keys (only active in CTF mode) ---
+        // --- Admin placement keys (1 / 2 — meaning depends on game mode) ---
         case "Digit1":
             if (isAdmin && gameMode === "ctf") {
                 const p = camera.position.clone();
                 p.y -= EYE_HEIGHT;
                 socket.emit("admin_ctf_place_flag", { position: [p.x, p.y, p.z] });
+            } else if (isAdmin && gameMode === "race") {
+                const p = camera.position.clone();
+                p.y -= EYE_HEIGHT - 0.2;
+                socket.emit("admin_race_place_start", { position: [p.x, p.y, p.z] });
             }
             break;
         case "Digit2":
@@ -293,6 +300,10 @@ function onKeyDown(e) {
                 // and don't fall through due to floating-point imprecision
                 p.y -= EYE_HEIGHT - 0.2;
                 socket.emit("admin_ctf_place_spawn", { position: [p.x, p.y, p.z] });
+            } else if (isAdmin && gameMode === "race") {
+                const p = camera.position.clone();
+                p.y -= EYE_HEIGHT - 0.2;
+                socket.emit("admin_race_place_end", { position: [p.x, p.y, p.z] });
             }
             break;
 
@@ -431,23 +442,33 @@ function transformSelectedModel(keyCode, fine) {
 
 function canEdit() {
     if (isAdmin) return true;
-    // Non-admins can never edit during CTF
-    if (gameMode === "ctf") return false;
+    // Non-admins can never edit during an active game mode
+    if (gameMode === "ctf" || gameMode === "race") return false;
     return editingEnabled;
 }
 
-/** Are we a CTF team player during a phase that restricts movement/mode? */
-function isCTFPlayerImmobilized() {
-    // Only locked during the 5-sec countdown, and only for non-admin team players
+/** Am I a participant locked in place (countdown phase of any active mode)? */
+function isPlayerImmobilized() {
     if (isAdmin) return false;
-    if (gameMode !== "ctf" || !ctfState) return false;
-    if (ctfState.phase !== "countdown") return false;
-    return ctfState.teams[myId] === "red" || ctfState.teams[myId] === "blue";
+    if (gameMode === "ctf" && ctfState && ctfState.phase === "countdown") {
+        return ctfState.teams[myId] === "red" || ctfState.teams[myId] === "blue";
+    }
+    if (gameMode === "race" && raceState && raceState.phase === "countdown") {
+        return raceState.roles && raceState.roles[myId] === "racer";
+    }
+    return false;
 }
 
 /** Are we permitted to use fly / clip modes right now? */
 function canUseFlyClip() {
     if (isAdmin) return true;
+    if (gameMode === "race" && raceState) {
+        // Racers can't fly/clip during countdown or running; spectators always can
+        const role = raceState.roles && raceState.roles[myId];
+        if (role === "racer" && (raceState.phase === "countdown" || raceState.phase === "running")) {
+            return false;
+        }
+    }
     if (gameMode !== "ctf" || !ctfState) return true;
     // Team players can't fly/clip during countdown or playing
     const myTeam = ctfState.teams[myId];
@@ -532,22 +553,43 @@ function nameFor(sid) {
 
 function updateTeamIndicator() {
     const el = document.getElementById("team-indicator");
-    if (gameMode !== "ctf" || !ctfState) {
-        el.style.display = "none";
+    if (gameMode === "ctf" && ctfState) {
+        const myTeam = ctfState.teams[myId];
+        if (myTeam === "red") {
+            el.textContent = "TEAM RED";
+            el.className = "team-red";
+        } else if (myTeam === "blue") {
+            el.textContent = "TEAM BLUE";
+            el.className = "team-blue";
+        } else {
+            el.textContent = "SPECTATOR";
+            el.className = "team-spectator";
+        }
+        el.style.display = "";
         return;
     }
-    const myTeam = ctfState.teams[myId];
-    if (myTeam === "red") {
-        el.textContent = "TEAM RED";
-        el.className = "team-red";
-    } else if (myTeam === "blue") {
-        el.textContent = "TEAM BLUE";
-        el.className = "team-blue";
-    } else {
-        el.textContent = "SPECTATOR";
-        el.className = "team-spectator";
+    if (gameMode === "race" && raceState) {
+        const role = raceState.roles && raceState.roles[myId];
+        if (role === "racer") {
+            const finished = (raceState.finishers || []).find((f) => f.sid === myId);
+            if (finished) {
+                el.textContent = `${ordinal(finished.place)} — ${formatRaceTime(finished.time_ms)}`;
+                el.className = "race-finished";
+            } else if (raceState.phase === "running") {
+                el.textContent = "RACING";
+                el.className = "race-racer";
+            } else {
+                el.textContent = "RACER";
+                el.className = "race-racer";
+            }
+        } else {
+            el.textContent = "SPECTATOR";
+            el.className = "team-spectator";
+        }
+        el.style.display = "";
+        return;
     }
-    el.style.display = "";
+    el.style.display = "none";
 }
 
 function updateModeIndicators() {
@@ -711,6 +753,22 @@ function initAdminUI() {
         socket.emit("admin_ctf_stop", {});
     });
 
+    // Race mode controls
+    const raceRadio = document.getElementById("admin-mode-race");
+    if (raceRadio) {
+        raceRadio.addEventListener("change", (e) => {
+            if (e.target.checked) socket.emit("admin_set_mode", { mode: "race" });
+        });
+    }
+    const raceAllBtn = document.getElementById("admin-race-all-btn");
+    if (raceAllBtn) raceAllBtn.addEventListener("click", () => socket.emit("admin_race_all_racers", {}));
+    const raceClearBtn = document.getElementById("admin-race-clear-btn");
+    if (raceClearBtn) raceClearBtn.addEventListener("click", () => socket.emit("admin_race_clear_racers", {}));
+    const raceStartBtn = document.getElementById("admin-race-start-btn");
+    if (raceStartBtn) raceStartBtn.addEventListener("click", () => socket.emit("admin_race_start", {}));
+    const raceStopBtn = document.getElementById("admin-race-stop-btn");
+    if (raceStopBtn) raceStopBtn.addEventListener("click", () => socket.emit("admin_race_stop", {}));
+
     // Prevent blocker click-through on admin panel inputs
     document.getElementById("admin-panel").addEventListener("click", (e) => e.stopPropagation());
     document.getElementById("admin-login").addEventListener("click", (e) => e.stopPropagation());
@@ -728,14 +786,16 @@ function broadcastLighting() {
 let _prevCtfPhase = null;
 let _prevCtfScores = null;
 let _prevCtfTeams = null;
+let _prevRacePhase = null;
 
-function applyGameState(mode, ctf) {
+function applyGameState(mode, ctf, race) {
     const prevMode = gameMode;
     const prevPhase = _prevCtfPhase;
     const prevScores = _prevCtfScores;
+    const prevRacePhase = _prevRacePhase;
 
-    // Clear any STL selection when the mode changes (CTF disallows editing for
-    // non-admins, and a stale highlighted model would be un-clearable)
+    // Clear any STL selection when the mode changes (active modes disallow
+    // editing for non-admins, and a stale highlighted model would be un-clearable)
     if (prevMode !== mode && selectedModel) {
         deselectModel();
     }
@@ -743,9 +803,11 @@ function applyGameState(mode, ctf) {
     const prevTeams = _prevCtfTeams;
     gameMode = mode;
     ctfState = ctf;
+    raceState = race;
     _prevCtfPhase  = ctf ? ctf.phase : null;
     _prevCtfScores = ctf ? { ...ctf.scores } : null;
     _prevCtfTeams  = ctf ? { ...ctf.teams } : null;
+    _prevRacePhase = race ? race.phase : null;
 
     // Force off fly/clip when a non-admin team player enters a locked phase
     if (!canUseFlyClip() && (flyMode || clipMode)) {
@@ -793,7 +855,22 @@ function applyGameState(mode, ctf) {
         }
     }
 
+    // Race phase announcements
+    if (race && prevRacePhase !== race.phase) {
+        if (race.phase === "running") {
+            // Only racers see "GO!"; spectators just see the countdown reach 0
+            if (race.roles && race.roles[myId] === "racer") {
+                showHudMessage("GO!", { duration: 1500, variant: "success" });
+            }
+        } else if (race.phase === "pregame"
+                   && (prevRacePhase === "running" || prevRacePhase === "countdown" || prevRacePhase === "finished")) {
+            // back to lobby — clear any results overlay just in case
+            hideRaceResults();
+        }
+    }
+
     const ctfActive = (mode === "ctf");
+    const raceActive = (mode === "race");
     sandboxGround.visible = !ctfActive;
     ctfGroundBlue.visible = ctfActive;
     ctfGroundRed.visible = ctfActive;
@@ -801,12 +878,15 @@ function applyGameState(mode, ctf) {
     refreshAllRemoteColors();
     // Update CTF flag and spawn markers
     refreshCTFMarkers();
+    refreshRaceMarkers();
     // Sync admin panel radios
     const sandboxRadio = document.getElementById("admin-mode-sandbox");
     const ctfRadio = document.getElementById("admin-mode-ctf");
+    const raceRadio = document.getElementById("admin-mode-race");
     if (sandboxRadio && ctfRadio) {
-        sandboxRadio.checked = !ctfActive;
+        sandboxRadio.checked = !ctfActive && !raceActive;
         ctfRadio.checked = ctfActive;
+        if (raceRadio) raceRadio.checked = raceActive;
     }
     const teamRow = document.getElementById("admin-ctf-team-row");
     if (teamRow) teamRow.style.display = ctfActive ? "" : "none";
@@ -815,6 +895,15 @@ function applyGameState(mode, ctf) {
     if (ctfActive) {
         const phaseEl = document.getElementById("admin-ctf-phase");
         if (phaseEl) phaseEl.textContent = `Phase: ${ctfState.phase}`;
+    }
+    // Race admin-row visibility
+    const raceRoleRow = document.getElementById("admin-race-role-row");
+    if (raceRoleRow) raceRoleRow.style.display = raceActive ? "" : "none";
+    const raceGameRow = document.getElementById("admin-race-game-row");
+    if (raceGameRow) raceGameRow.style.display = raceActive ? "" : "none";
+    if (raceActive) {
+        const racePhaseEl = document.getElementById("admin-race-phase");
+        if (racePhaseEl) racePhaseEl.textContent = `Phase: ${raceState.phase}`;
     }
 
     // Scoreboard + team indicator
@@ -831,7 +920,7 @@ function applyGameState(mode, ctf) {
     } else {
         scoreboard.style.display = "none";
         flagBanner.style.display = "none";
-        document.getElementById("countdown-display").style.display = "none";
+        if (!raceActive) document.getElementById("countdown-display").style.display = "none";
     }
     updateTeamIndicator();
 
@@ -844,6 +933,22 @@ function applyGameState(mode, ctf) {
         startBtn.title = startBtn.disabled
             ? "Set both flags (press 1) and both spawns (press 2) first"
             : "";
+    }
+    // Race start button gated on having start AND end
+    const raceStartBtn = document.getElementById("admin-race-start-btn");
+    if (raceStartBtn) {
+        const haveEndpoints = raceActive && raceState.start && raceState.end;
+        raceStartBtn.disabled = !haveEndpoints;
+        raceStartBtn.title = raceStartBtn.disabled
+            ? "Place start (press 1) and end (press 2) first"
+            : "";
+    }
+
+    // Show/hide the race results overlay if we're in the finished phase
+    if (raceActive && race && race.phase === "finished" && race.results_until_ts) {
+        showRaceResults(race);
+    } else if (!raceActive || !race || race.phase !== "finished") {
+        hideRaceResults();
     }
 
     updateUploadVisibility(uploadEnabled);
@@ -919,6 +1024,110 @@ function disposeMarker(m) {
         if (child.geometry) child.geometry.dispose();
         if (child.material) child.material.dispose();
     });
+}
+
+function buildRaceMarker(kind) {
+    // kind: "start" (green) | "end" (gold). Same shape as a spawn marker so admins
+    // immediately recognize it as a "go here" pad, distinguished by color.
+    const color = kind === "start" ? "#22c55e" : "#f59e0b";
+    const group = new THREE.Group();
+    const ringMat = new THREE.MeshBasicMaterial({
+        color, transparent: true, opacity: 0.7, side: THREE.DoubleSide,
+    });
+    const ring = new THREE.Mesh(new THREE.RingGeometry(1.4, 1.7, 32), ringMat);
+    ring.rotation.x = -Math.PI / 2;
+    ring.position.y = 0.03;
+    group.add(ring);
+
+    const beamMat = new THREE.MeshBasicMaterial({
+        color, transparent: true, opacity: 0.25,
+        blending: THREE.AdditiveBlending,
+    });
+    const beam = new THREE.Mesh(new THREE.CylinderGeometry(1.5, 1.5, 50, 16, 1, true), beamMat);
+    beam.position.y = 25;
+    group.add(beam);
+    return group;
+}
+
+function refreshRaceMarkers() {
+    const active = (gameMode === "race") && raceState;
+    const wantStart = active && raceState.start;
+    const wantEnd = active && raceState.end;
+
+    if (wantStart) {
+        if (!raceMarkers.start) {
+            raceMarkers.start = buildRaceMarker("start");
+            scene.add(raceMarkers.start);
+        }
+        raceMarkers.start.position.fromArray(raceState.start);
+    } else {
+        disposeMarker(raceMarkers.start);
+        raceMarkers.start = null;
+    }
+
+    if (wantEnd) {
+        if (!raceMarkers.end) {
+            raceMarkers.end = buildRaceMarker("end");
+            scene.add(raceMarkers.end);
+        }
+        raceMarkers.end.position.fromArray(raceState.end);
+    } else {
+        disposeMarker(raceMarkers.end);
+        raceMarkers.end = null;
+    }
+}
+
+function ordinal(n) {
+    const s = ["th", "st", "nd", "rd"];
+    const v = n % 100;
+    return n + (s[(v - 20) % 10] || s[v] || s[0]);
+}
+
+function formatRaceTime(ms) {
+    const totalSeconds = ms / 1000;
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = (totalSeconds - minutes * 60).toFixed(2);
+    if (minutes > 0) return `${minutes}:${seconds.padStart(5, "0")}`;
+    return `${seconds}s`;
+}
+
+function showRaceResults(race) {
+    const panel = document.getElementById("race-results");
+    if (!panel) return;
+    const header = document.getElementById("race-results-header");
+    const list = document.getElementById("race-results-list");
+    header.textContent = race.finishers.length ? "RACE RESULTS" : "RACE STOPPED";
+    list.innerHTML = "";
+    if (!race.finishers.length) {
+        const li = document.createElement("li");
+        li.className = "race-result-empty";
+        li.textContent = "No finishers";
+        list.appendChild(li);
+    } else {
+        for (const f of race.finishers) {
+            const li = document.createElement("li");
+            const place = document.createElement("span");
+            place.className = "race-result-place";
+            place.textContent = ordinal(f.place);
+            const name = document.createElement("span");
+            name.className = "race-result-name";
+            name.style.color = f.color || "#fff";
+            name.textContent = f.name;
+            const t = document.createElement("span");
+            t.className = "race-result-time";
+            t.textContent = formatRaceTime(f.time_ms);
+            li.appendChild(place);
+            li.appendChild(name);
+            li.appendChild(t);
+            list.appendChild(li);
+        }
+    }
+    panel.style.display = "";
+}
+
+function hideRaceResults() {
+    const panel = document.getElementById("race-results");
+    if (panel) panel.style.display = "none";
 }
 
 function refreshCTFMarkers() {
@@ -1090,6 +1299,7 @@ function updateAdminPanel(data) {
     const playerList = document.getElementById("admin-player-list");
     playerList.innerHTML = "";
     const ctfActive = (data.game_mode === "ctf");
+    const raceActive = (data.game_mode === "race");
     for (const player of data.players) {
         const li = document.createElement("li");
         const nameSpan = document.createElement("span");
@@ -1112,6 +1322,22 @@ function updateAdminPanel(data) {
                 btnGroup.appendChild(btn);
             }
             li.appendChild(btnGroup);
+        } else if (raceActive) {
+            // Race role buttons (Race / Spectate)
+            const btnGroup = document.createElement("span");
+            btnGroup.className = "team-btn-group";
+            for (const [label, role, btnClass] of [["R", "racer", "race-racer-btn"], ["S", "spectator", "team-gray"]]) {
+                const btn = document.createElement("button");
+                btn.textContent = label;
+                btn.className = "team-btn " + btnClass + (player.race_role === role ? " active" : "");
+                btn.title = role === "racer" ? "Set as racer" : "Set as spectator";
+                btn.addEventListener("click", (e) => {
+                    e.stopPropagation();
+                    socket.emit("admin_race_assign", { sid: player.id, role });
+                });
+                btnGroup.appendChild(btn);
+            }
+            li.appendChild(btnGroup);
         }
         playerList.appendChild(li);
     }
@@ -1124,7 +1350,7 @@ function updatePlayer(delta) {
     if (!controls.isLocked) return;
 
     // Immobilize team players during CTF countdown
-    if (isCTFPlayerImmobilized()) {
+    if (isPlayerImmobilized()) {
         velocity.set(0, 0, 0);
         // Still apply ground snap so players don't sink
         if (!flyMode) {
@@ -1479,7 +1705,7 @@ function initNetwork() {
         updateUploadVisibility(uploadEnabled);
         if (data.lighting) applyLighting(data.lighting);
         applyMovementSettings(data.movement_mult ?? 1.0, data.jump_mult ?? 1.0);
-        applyGameState(data.game_mode || "sandbox", data.ctf || null);
+        applyGameState(data.game_mode || "sandbox", data.ctf || null, data.race || null);
         updateModeIndicators();
         updatePlayerCount();
     });
@@ -1611,7 +1837,21 @@ function initNetwork() {
     });
 
     socket.on("game_state", (data) => {
-        applyGameState(data.mode || "sandbox", data.ctf || null);
+        applyGameState(data.mode || "sandbox", data.ctf || null, data.race || null);
+    });
+
+    socket.on("race_event", (ev) => {
+        switch (ev.type) {
+            case "you_finished":
+                showHudMessage(`You finished ${ordinal(ev.place)}!  ${formatRaceTime(ev.time_ms)}`,
+                               { duration: 4000, variant: "success" });
+                logEvent(`You finished ${ordinal(ev.place)} (${formatRaceTime(ev.time_ms)})`, "success");
+                break;
+            case "player_finished":
+                logEvent(`${ev.name} finished ${ordinal(ev.place)} (${formatRaceTime(ev.time_ms)})`,
+                         "muted");
+                break;
+        }
     });
 
     socket.on("admin_ctf_error", (data) => {
@@ -1956,12 +2196,18 @@ let _countdownLastShown = -1;
 
 function updateCountdownDisplay() {
     const el = document.getElementById("countdown-display");
-    if (gameMode !== "ctf" || !ctfState || ctfState.phase !== "countdown" || !ctfState.countdown_end_ts) {
+    let endTs = null;
+    if (gameMode === "ctf" && ctfState && ctfState.phase === "countdown") {
+        endTs = ctfState.countdown_end_ts;
+    } else if (gameMode === "race" && raceState && raceState.phase === "countdown") {
+        endTs = raceState.countdown_end_ts;
+    }
+    if (!endTs) {
         if (el.style.display !== "none") el.style.display = "none";
         _countdownLastShown = -1;
         return;
     }
-    const remaining = Math.max(0, Math.ceil(ctfState.countdown_end_ts - Date.now() / 1000));
+    const remaining = Math.max(0, Math.ceil(endTs - Date.now() / 1000));
     if (remaining !== _countdownLastShown) {
         el.textContent = remaining > 0 ? remaining : "GO!";
         el.style.display = "";

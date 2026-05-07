@@ -65,6 +65,20 @@ ctf_state = {
     "scores": {"red": 0, "blue": 0},
 }
 
+# Race state (used only when game_mode == "race")
+# Phases: "pregame" -> "countdown" -> "running" -> "finished" -> "pregame"
+race_state = {
+    "phase": "pregame",
+    "roles": {},                # sid -> "racer" | "spectator" (absent = "racer" by default for non-admins)
+    "start": None,              # [x, y, z] starting line position
+    "end": None,                # [x, y, z] finish line position
+    "finishers": [],            # ordered list of {"sid", "name", "color", "time_ms"}
+    "active_racers": [],        # sids that were racers when current race began (for "all done" check)
+    "start_ts": None,           # time.time() when "running" began (used to compute finish times)
+    "countdown_end_ts": None,
+    "results_until_ts": None,   # while phase=="finished", show results until this wall-clock time
+}
+
 
 def ctf_public_state():
     """CTF state safe to broadcast (no internal references)."""
@@ -80,11 +94,38 @@ def ctf_public_state():
     }
 
 
+def race_role_for(sid):
+    """Resolve a player's effective race role. Admins default to spectator;
+    everyone else defaults to racer unless they've been explicitly assigned."""
+    if sid in race_state["roles"]:
+        return race_state["roles"][sid]
+    return "spectator" if sid in admin_sids else "racer"
+
+
+def race_public_state():
+    """Race state safe to broadcast."""
+    # Resolve roles for everyone currently connected so clients can render the UI
+    # without re-implementing the default-by-admin rule.
+    resolved_roles = {sid: race_role_for(sid) for sid in players.keys()}
+    return {
+        "phase": race_state["phase"],
+        "roles": resolved_roles,
+        "start": race_state["start"],
+        "end": race_state["end"],
+        "finishers": list(race_state["finishers"]),
+        "active_racers": list(race_state["active_racers"]),
+        "countdown_end_ts": race_state.get("countdown_end_ts"),
+        "start_ts": race_state.get("start_ts"),
+        "results_until_ts": race_state.get("results_until_ts"),
+    }
+
+
 def broadcast_game_state():
-    """Broadcast current game mode and CTF state to all clients."""
+    """Broadcast current game mode plus mode-specific state to all clients."""
     socketio.emit("game_state", {
         "mode": game_mode,
         "ctf": ctf_public_state() if game_mode == "ctf" else None,
+        "race": race_public_state() if game_mode == "race" else None,
     })
 
 def meta_path(stl_filename):
@@ -140,6 +181,7 @@ load_existing_stls()
 
 
 CTF_MAP_FILE = os.path.join(STL_DIR, "ctf_map.json")
+RACE_MAP_FILE = os.path.join(STL_DIR, "race_map.json")
 
 
 def save_ctf_map():
@@ -174,7 +216,31 @@ def load_ctf_map():
             ctf_state["spawns"][t] = data["spawns"].get(t)
 
 
+def save_race_map():
+    """Persist race start/end positions to disk."""
+    data = {"start": race_state["start"], "end": race_state["end"]}
+    try:
+        with open(RACE_MAP_FILE, "w") as f:
+            json.dump(data, f, indent=2)
+    except OSError:
+        pass
+
+
+def load_race_map():
+    """Load race start/end positions from disk, if available."""
+    if not os.path.exists(RACE_MAP_FILE):
+        return
+    try:
+        with open(RACE_MAP_FILE) as f:
+            data = json.load(f)
+    except (json.JSONDecodeError, OSError):
+        return
+    race_state["start"] = data.get("start")
+    race_state["end"] = data.get("end")
+
+
 load_ctf_map()
+load_race_map()
 
 
 # Assign colors to players
@@ -200,8 +266,8 @@ def can_edit(sid):
     """Can this client edit/delete/transform models?"""
     if is_admin(sid):
         return True
-    # During CTF, only admins can edit
-    if game_mode == "ctf":
+    # During an active game mode, only admins can edit
+    if game_mode in ("ctf", "race"):
         return False
     return admin_settings["editing_enabled"]
 
@@ -215,7 +281,12 @@ def broadcast_admin_state(target_sid=None):
             for m in stl_models.values()
         ],
         "players": [
-            {"id": p["id"], "name": p["name"], "team": ctf_state["teams"].get(p["id"])}
+            {
+                "id": p["id"],
+                "name": p["name"],
+                "team": ctf_state["teams"].get(p["id"]),
+                "race_role": race_role_for(p["id"]),
+            }
             for p in players.values()
         ],
         "game_mode": game_mode,
@@ -241,11 +312,11 @@ def serve_stl(filename):
 
 @app.route("/upload_stl", methods=["POST"])
 def upload_stl():
-    # Enforce upload lock for non-admins (always locked during CTF mode)
+    # Enforce upload lock for non-admins (always locked during an active game mode)
     uploader = request.form.get("uploader", "")
     if not is_admin(uploader):
-        if game_mode == "ctf":
-            return jsonify({"error": "Uploads disabled during CTF mode"}), 403
+        if game_mode in ("ctf", "race"):
+            return jsonify({"error": f"Uploads disabled during {game_mode.upper()} mode"}), 403
         if not admin_settings["upload_enabled"]:
             return jsonify({"error": "Uploads are currently disabled"}), 403
 
@@ -401,10 +472,14 @@ def admin_load_scene():
     ctf_state["spawns"]    = {"red": None, "blue": None}
     ctf_state["flag_pos"]  = {"red": None, "blue": None}
     load_ctf_map()
+    # Same for race map
+    race_state["start"] = None
+    race_state["end"] = None
+    load_race_map()
 
     # Broadcast full scene refresh to all clients
     socketio.emit("scene_reloaded", {"models": list(stl_models.values())})
-    if game_mode == "ctf":
+    if game_mode in ("ctf", "race"):
         broadcast_game_state()
     broadcast_admin_state()
     print(f"[ADMIN] Scene loaded from uploaded zip ({len(stl_models)} models)")
@@ -438,6 +513,7 @@ def on_connect():
         "jump_mult": admin_settings["jump_mult"],
         "game_mode": game_mode,
         "ctf": ctf_public_state() if game_mode == "ctf" else None,
+        "race": race_public_state() if game_mode == "race" else None,
     })
 
     # Notify others
@@ -446,6 +522,10 @@ def on_connect():
 
     # Update admin panels with new player list
     broadcast_admin_state()
+    # In race mode, role lists default by membership, so re-broadcast so peers
+    # see the new player's resolved role.
+    if game_mode == "race":
+        broadcast_game_state()
 
 
 @socketio.on("disconnect")
@@ -454,10 +534,13 @@ def on_disconnect():
     if sid in players:
         print(f"[-] {players[sid]['name']} disconnected ({sid})")
         clean_ctf_state_for_player(sid)
+        clean_race_state_for_player(sid)
         del players[sid]
         admin_sids.discard(sid)
         emit("player_left", {"id": sid}, broadcast=True)
         broadcast_admin_state()
+        if game_mode == "race":
+            broadcast_game_state()
 
 
 @socketio.on("heartbeat")
@@ -503,9 +586,11 @@ def on_player_update(data):
             "flashlight": players[sid]["flashlight"],
         }, broadcast=True, include_self=False)
 
-        # Run CTF game logic when active
+        # Run mode-specific game logic when active
         if game_mode == "ctf" and ctf_state["phase"] == "playing":
             process_ctf_contacts(sid)
+        elif game_mode == "race" and race_state["phase"] == "running":
+            process_race_finish(sid)
 
 
 @socketio.on("stl_transform")
@@ -701,7 +786,7 @@ def on_admin_set_mode(data):
     if not is_admin(sid):
         return
     new_mode = data.get("mode", "sandbox")
-    if new_mode not in ("sandbox", "ctf"):
+    if new_mode not in ("sandbox", "ctf", "race"):
         return
     game_mode = new_mode
     if new_mode == "ctf":
@@ -716,6 +801,15 @@ def on_admin_set_mode(data):
         for t in ("red", "blue"):
             home = ctf_state["flag_home"].get(t)
             ctf_state["flag_pos"][t] = list(home) if home else None
+    elif new_mode == "race":
+        # Reset live race gameplay; preserve start/end placements (loaded from race_map.json).
+        race_state["phase"] = "pregame"
+        race_state["roles"] = {}
+        race_state["finishers"] = []
+        race_state["active_racers"] = []
+        race_state["start_ts"] = None
+        race_state["countdown_end_ts"] = None
+        race_state["results_until_ts"] = None
     broadcast_game_state()
     broadcast_admin_state()
     print(f"[ADMIN] Game mode set to {new_mode}")
@@ -1079,6 +1173,234 @@ def on_admin_ctf_stop(data):
     print(f"[ADMIN] CTF game stopped")
 
 
+# ============================================================
+# Race mode handlers
+# ============================================================
+
+RACE_FINISH_DIST = 2.5  # finish-line trigger radius
+RACE_RESULTS_DURATION = 8.0  # seconds to display final leaderboard
+
+
+def clean_race_state_for_player(sid):
+    """Strip a disconnecting player from race state. Returns True if anything changed."""
+    changed = False
+    if sid in race_state["roles"]:
+        del race_state["roles"][sid]
+        changed = True
+    if sid in race_state["active_racers"]:
+        race_state["active_racers"].remove(sid)
+        changed = True
+    # We keep them in finishers if they finished — leaderboard still shows them.
+    if game_mode != "race":
+        return changed
+    # If they were the last unfinished racer, end the race.
+    if (race_state["phase"] == "running"
+            and race_state["active_racers"]
+            and all(any(f["sid"] == s for f in race_state["finishers"])
+                    for s in race_state["active_racers"])):
+        end_race(reason="all_finished")
+    return changed
+
+
+@socketio.on("admin_race_place_start")
+def on_admin_race_place_start(data):
+    sid = request.sid
+    if not is_admin(sid) or game_mode != "race":
+        return
+    pos = data.get("position")
+    if not pos or len(pos) != 3:
+        return
+    race_state["start"] = list(pos)
+    save_race_map()
+    broadcast_game_state()
+    print(f"[ADMIN] Placed race start at {pos}")
+
+
+@socketio.on("admin_race_place_end")
+def on_admin_race_place_end(data):
+    sid = request.sid
+    if not is_admin(sid) or game_mode != "race":
+        return
+    pos = data.get("position")
+    if not pos or len(pos) != 3:
+        return
+    race_state["end"] = list(pos)
+    save_race_map()
+    broadcast_game_state()
+    print(f"[ADMIN] Placed race end at {pos}")
+
+
+@socketio.on("admin_race_assign")
+def on_admin_race_assign(data):
+    """Set a player's race role. role=None resets to default (racer for non-admins, spectator for admins)."""
+    sid = request.sid
+    if not is_admin(sid) or game_mode != "race":
+        return
+    target_sid = data.get("sid")
+    role = data.get("role")
+    if target_sid not in players:
+        return
+    if role in ("racer", "spectator"):
+        race_state["roles"][target_sid] = role
+    else:
+        race_state["roles"].pop(target_sid, None)
+    broadcast_game_state()
+    broadcast_admin_state()
+
+
+@socketio.on("admin_race_all_racers")
+def on_admin_race_all_racers(data):
+    sid = request.sid
+    if not is_admin(sid) or game_mode != "race":
+        return
+    for psid in players.keys():
+        # Admin themselves stays spectator unless explicitly opted in.
+        if psid in admin_sids:
+            race_state["roles"][psid] = "spectator"
+        else:
+            race_state["roles"][psid] = "racer"
+    broadcast_game_state()
+    broadcast_admin_state()
+
+
+@socketio.on("admin_race_clear_racers")
+def on_admin_race_clear_racers(data):
+    """Mark every player as spectator."""
+    sid = request.sid
+    if not is_admin(sid) or game_mode != "race":
+        return
+    for psid in players.keys():
+        race_state["roles"][psid] = "spectator"
+    broadcast_game_state()
+    broadcast_admin_state()
+
+
+@socketio.on("admin_race_start")
+def on_admin_race_start(data):
+    """Begin a race: 5-second countdown, racers teleported to start, immobilized until GO."""
+    sid = request.sid
+    if not is_admin(sid) or game_mode != "race":
+        return
+    if not race_state["start"]:
+        emit("admin_ctf_error", {"message": "Place a start point (key 1) before starting."})
+        return
+    if not race_state["end"]:
+        emit("admin_ctf_error", {"message": "Place an end point (key 2) before starting."})
+        return
+
+    racers = [psid for psid in players.keys() if race_role_for(psid) == "racer"]
+    if not racers:
+        emit("admin_ctf_error", {"message": "No racers assigned. Use 'All to racing' or pick at least one."})
+        return
+
+    race_state["phase"] = "countdown"
+    race_state["countdown_end_ts"] = time.time() + 5
+    race_state["finishers"] = []
+    race_state["active_racers"] = list(racers)
+    race_state["start_ts"] = None
+    race_state["results_until_ts"] = None
+
+    # Teleport every racer to the start
+    for psid in racers:
+        socketio.emit("teleport", {"position": list(race_state["start"])}, to=psid)
+
+    broadcast_game_state()
+    print(f"[ADMIN] Race countdown started ({len(racers)} racer(s))")
+
+    def transition_to_running():
+        socketio.sleep(5)
+        if race_state["phase"] != "countdown":
+            return  # admin stopped, or otherwise interrupted
+        race_state["phase"] = "running"
+        race_state["start_ts"] = time.time()
+        race_state["countdown_end_ts"] = None
+        broadcast_game_state()
+        print(f"[ADMIN] Race now running")
+
+    socketio.start_background_task(transition_to_running)
+
+
+def end_race(reason):
+    """Transition to 'finished' phase, broadcast results, schedule return to pregame."""
+    if race_state["phase"] in ("finished", "pregame"):
+        return
+    race_state["phase"] = "finished"
+    race_state["countdown_end_ts"] = None
+    race_state["results_until_ts"] = time.time() + RACE_RESULTS_DURATION
+    broadcast_game_state()
+    print(f"[ADMIN] Race ended ({reason}); {len(race_state['finishers'])} finisher(s)")
+
+    def back_to_pregame():
+        socketio.sleep(RACE_RESULTS_DURATION)
+        # Only revert if we're still in 'finished' (admin may have started another race)
+        if race_state["phase"] == "finished":
+            race_state["phase"] = "pregame"
+            race_state["results_until_ts"] = None
+            race_state["active_racers"] = []
+            race_state["finishers"] = []
+            broadcast_game_state()
+
+    socketio.start_background_task(back_to_pregame)
+
+
+@socketio.on("admin_race_stop")
+def on_admin_race_stop(data):
+    sid = request.sid
+    if not is_admin(sid) or game_mode != "race":
+        return
+    if race_state["phase"] in ("countdown", "running"):
+        end_race(reason="admin_stop")
+    else:
+        # Clear results display immediately if admin stops during the leaderboard
+        race_state["phase"] = "pregame"
+        race_state["results_until_ts"] = None
+        race_state["countdown_end_ts"] = None
+        race_state["finishers"] = []
+        race_state["active_racers"] = []
+        broadcast_game_state()
+    print(f"[ADMIN] Race stop requested")
+
+
+def process_race_finish(sid):
+    """Called from on_player_update during phase=='running'. Detect finish-line crossing."""
+    if sid not in race_state["active_racers"]:
+        return  # only sids that started the race can finish it
+    # Already finished — ignore.
+    if any(f["sid"] == sid for f in race_state["finishers"]):
+        return
+    end_pos = race_state["end"]
+    if not end_pos or sid not in players:
+        return
+    pos = players[sid]["position"]
+    feet = [pos[0], pos[1] - 1.6, pos[2]]  # camera/eye -> feet
+    if distance(feet, end_pos) >= RACE_FINISH_DIST:
+        return
+
+    elapsed_ms = int((time.time() - race_state["start_ts"]) * 1000) if race_state["start_ts"] else 0
+    place = len(race_state["finishers"]) + 1
+    race_state["finishers"].append({
+        "sid": sid,
+        "name": players[sid]["name"],
+        "color": players[sid]["color"],
+        "time_ms": elapsed_ms,
+        "place": place,
+    })
+    # Personal HUD message to the finisher.
+    socketio.emit("race_event",
+                  {"type": "you_finished", "place": place, "time_ms": elapsed_ms},
+                  to=sid)
+    # Public log entry for everyone else.
+    socketio.emit("race_event",
+                  {"type": "player_finished", "sid": sid, "place": place,
+                   "name": players[sid]["name"], "time_ms": elapsed_ms})
+    # If everyone's done, end the race.
+    if all(any(f["sid"] == s for f in race_state["finishers"])
+           for s in race_state["active_racers"]):
+        end_race(reason="all_finished")
+    else:
+        broadcast_game_state()
+
+
 STALE_PLAYER_TIMEOUT = 30   # seconds without heartbeat/update before eviction
 CLEANUP_INTERVAL      = 10  # seconds between cleanup passes
 
@@ -1095,11 +1417,14 @@ def cleanup_stale_players():
         for sid in stale:
             print(f"[-] {players[sid]['name']} evicted (stale for {now - players[sid]['last_seen_ts']:.0f}s)")
             clean_ctf_state_for_player(sid)
+            clean_race_state_for_player(sid)
             del players[sid]
             admin_sids.discard(sid)
             socketio.emit("player_left", {"id": sid})
         if stale:
             broadcast_admin_state()
+            if game_mode == "race":
+                broadcast_game_state()
 
 
 def get_lan_ips():
