@@ -1757,6 +1757,7 @@ function buildCarrierFx() {
     // Tall additive column reaching far into the sky. White by default;
     // recolored each frame from syncHeldFlags() based on the carrier's team.
     const COLUMN_HEIGHT = 1000;
+    const COLUMN_BASE_Y = 2.2; // start above the head so the body's team color stays readable
     const columnMat = new THREE.MeshBasicMaterial({
         color: 0xffffff,
         transparent: true,
@@ -1768,7 +1769,7 @@ function buildCarrierFx() {
         new THREE.CylinderGeometry(0.18, 0.18, COLUMN_HEIGHT, 12, 1, true),
         columnMat,
     );
-    column.position.y = COLUMN_HEIGHT / 2; // base at feet, extending upward
+    column.position.y = COLUMN_BASE_Y + COLUMN_HEIGHT / 2;
     column.renderOrder = 999;
     column.name = "carrierColumn";
     group.add(column);
