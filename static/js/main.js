@@ -926,13 +926,21 @@ function applyGameState(mode, ctf, race) {
 
     // Disable Start button unless both flags and spawns are set
     const startBtn = document.getElementById("admin-ctf-start-btn");
+    const ctfHint = document.getElementById("admin-ctf-hint");
     if (startBtn) {
-        const haveFlags  = ctfActive && ctfState.flag_home.red && ctfState.flag_home.blue;
-        const haveSpawns = ctfActive && ctfState.spawns.red && ctfState.spawns.blue;
-        startBtn.disabled = !(haveFlags && haveSpawns);
-        startBtn.title = startBtn.disabled
-            ? "Set both flags (press 1) and both spawns (press 2) first"
+        const missing = [];
+        if (ctfActive) {
+            if (!ctfState.flag_home.red)  missing.push("red flag");
+            if (!ctfState.flag_home.blue) missing.push("blue flag");
+            if (!ctfState.spawns.red)     missing.push("red spawn");
+            if (!ctfState.spawns.blue)    missing.push("blue spawn");
+        }
+        startBtn.disabled = !ctfActive || missing.length > 0;
+        const hint = missing.length
+            ? `Missing: ${missing.join(", ")} — press 1 (flag) and 2 (spawn) on each side`
             : "";
+        if (ctfHint) ctfHint.textContent = hint;
+        startBtn.title = hint;
     }
     // Race start button gated on having start AND end
     const raceStartBtn = document.getElementById("admin-race-start-btn");
