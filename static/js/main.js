@@ -1726,6 +1726,12 @@ function addRemotePlayer(playerData) {
     group.add(rpLightTarget);
     rpLight.target = rpLightTarget;
 
+    // Carrier FX: glow column + x-ray silhouette of body/head, shown only while
+    // this player is holding a flag. Hidden by default.
+    const carrierFx = buildCarrierFx();
+    carrierFx.visible = false;
+    group.add(carrierFx);
+
     if (playerData.position) {
         group.position.fromArray(playerData.position);
         group.position.y -= EYE_HEIGHT;
@@ -1739,9 +1745,62 @@ function addRemotePlayer(playerData) {
         targetPos: group.position.clone(),
         targetDir: new THREE.Vector3(0, 0, -1),
         originalColor: playerData.color,
+        carrierFx,
     };
     remotePlayers.set(playerData.id, rp);
     applyRemoteDisplay(rp, playerData.id);
+}
+
+function buildCarrierFx() {
+    const group = new THREE.Group();
+
+    // Tall additive column reaching far into the sky. White by default;
+    // recolored each frame from syncHeldFlags() based on the carrier's team.
+    const COLUMN_HEIGHT = 1000;
+    const columnMat = new THREE.MeshBasicMaterial({
+        color: 0xffffff,
+        transparent: true,
+        opacity: 0.28,
+        depthTest: false,
+        blending: THREE.AdditiveBlending,
+    });
+    const column = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.18, 0.18, COLUMN_HEIGHT, 12, 1, true),
+        columnMat,
+    );
+    column.position.y = COLUMN_HEIGHT / 2; // base at feet, extending upward
+    column.renderOrder = 999;
+    column.name = "carrierColumn";
+    group.add(column);
+
+    // X-ray body+head silhouettes. depthTest=false so they show through walls,
+    // renderOrder high so they draw on top of everything.
+    const xrayMat = new THREE.MeshBasicMaterial({
+        color: 0xffffff,
+        transparent: true,
+        opacity: 0.4,
+        depthTest: false,
+    });
+    const xrayBody = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.28, 1.0, 8), xrayMat);
+    xrayBody.position.y = 0.7;
+    xrayBody.renderOrder = 999;
+    xrayBody.name = "carrierXrayBody";
+    group.add(xrayBody);
+
+    const xrayHead = new THREE.Mesh(new THREE.SphereGeometry(0.23, 8, 8), xrayMat.clone());
+    xrayHead.position.y = 1.4;
+    xrayHead.renderOrder = 999;
+    xrayHead.name = "carrierXrayHead";
+    xrayHead.material.depthTest = false;
+    group.add(xrayHead);
+
+    return group;
+}
+
+function setCarrierFxColor(carrierFx, hex) {
+    carrierFx.children.forEach((child) => {
+        if (child.material && child.material.color) child.material.color.set(hex);
+    });
 }
 
 function removeRemotePlayer(playerId) {
@@ -1822,13 +1881,43 @@ function onWindowResize() {
 // ============================================================
 // Main Loop
 // ============================================================
+function setFlagXray(flagMesh, on) {
+    flagMesh.traverse((child) => {
+        if (!child.isMesh || !child.material) return;
+        child.material.depthTest = !on;
+        child.material.transparent = on || child.material.transparent;
+        child.renderOrder = on ? 998 : 0;
+    });
+}
+
 function syncHeldFlags() {
-    // Position flag meshes to their holder's current rendered position each frame
-    if (gameMode !== "ctf" || !ctfState) return;
+    // Position flag meshes to their holder's current rendered position each frame.
+    // Also drives the carrier FX (glow column + x-ray silhouette) on remote players.
+    if (gameMode !== "ctf" || !ctfState) {
+        // Mode left CTF: ensure all carrier FX is off.
+        for (const [, rp] of remotePlayers) {
+            if (rp.carrierFx) rp.carrierFx.visible = false;
+        }
+        return;
+    }
+
+    // Hide all carrier FX first; we'll re-enable it for actual carriers below.
+    const carrierIds = new Set();
+    for (const team of ["red", "blue"]) {
+        const holder = ctfState.flag_holder[team];
+        if (holder) carrierIds.add(holder);
+    }
+    for (const [id, rp] of remotePlayers) {
+        if (rp.carrierFx) rp.carrierFx.visible = carrierIds.has(id);
+    }
+
     for (const team of ["red", "blue"]) {
         const holder = ctfState.flag_holder[team];
         const flagMesh = ctfMarkers[team].flag;
-        if (!holder) continue;
+        if (!holder) {
+            if (flagMesh) setFlagXray(flagMesh, false);
+            continue;
+        }
         // We need a flag mesh to show held flags; create if missing
         let mesh = flagMesh;
         if (!mesh) {
@@ -1836,12 +1925,22 @@ function syncHeldFlags() {
             scene.add(mesh);
             ctfMarkers[team].flag = mesh;
         }
+        // Held flags render through walls so chasers can spot them
+        setFlagXray(mesh, true);
+
         if (holder === myId) {
             // Follow local camera: pole base at feet, so position is camera - EYE_HEIGHT
             mesh.position.set(camera.position.x, camera.position.y - EYE_HEIGHT, camera.position.z);
         } else {
             const rp = remotePlayers.get(holder);
-            if (rp) mesh.position.copy(rp.group.position);
+            if (rp) {
+                mesh.position.copy(rp.group.position);
+                if (rp.carrierFx) {
+                    // Color the FX in the *carried* flag's team color so a blue
+                    // player carrying the red flag glows red — easy to read at a glance.
+                    setCarrierFxColor(rp.carrierFx, teamColor(team));
+                }
+            }
         }
     }
 }
